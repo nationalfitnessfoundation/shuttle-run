@@ -870,6 +870,7 @@ async function ensureAudio() {
     AUDIO.halfway, AUDIO.close,
     ...Object.values(AUDIO.countdown || {}),
     ...Object.values(AUDIO.levels || {}),
+    ...Object.values(AUDIO.lap || {}),
   ].filter(Boolean);
   for (const src of allSources) getAudio(src);
   audioReady = true;
