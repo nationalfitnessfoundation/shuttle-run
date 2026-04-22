@@ -824,11 +824,8 @@ const TOTAL_LAPS_ALL = PROTOCOL.reduce((a, b) => a + b.shuttles, 0);
 const audioCache = new Map();
 let audioReady = false;
 let lapAudio = null;            // single shared HTMLAudioElement for lap-number callouts
-// Beep instance pool — rotating through 3 Audio elements per type prevents
-// Safari's "play() interrupted" rejection when beeps fire in rapid succession.
-const BEEP_POOL_SIZE = 3;
-const beepPool = { shuttle: [], levelend: [] };
-const beepPoolIdx = { shuttle: 0, levelend: 0 };
+let webAudioCtx = null;         // shared AudioContext for synthesized beeps
+                                // (much more reliable than HTMLAudioElement for short repeating sounds)
 let scheduledSources = [];   // legacy stub for finish/reset code
 let startAudioTime = 0;      // unused (legacy)
 let startWallMs   = 0;
@@ -853,22 +850,24 @@ function getAudio(src) {
 async function ensureAudio() {
   // MUST be called from a user gesture (Start or Listen click). Idempotent.
   if (audioReady) return;
-  // Unlock iOS audio session via an in-memory silent Web Audio buffer.
-  // No external file = no path issues, no 404s, can never silently fail.
+  // Create a SHARED AudioContext we keep around for the whole session.
+  // Used for: (1) the iOS audio-session unlock via a silent buffer, and
+  // (2) synthesized beep playback during the test.
   try {
     const AC = window.AudioContext || window.webkitAudioContext;
-    if (AC) {
-      const ctx = new AC();
-      if (ctx.state === 'suspended') {
-        try { await ctx.resume(); } catch (e) {}
+    if (AC && !webAudioCtx) {
+      webAudioCtx = new AC();
+      if (webAudioCtx.state === 'suspended') {
+        try { await webAudioCtx.resume(); } catch (e) {}
       }
-      const buffer = ctx.createBuffer(1, 1, 22050);
-      const source = ctx.createBufferSource();
+      // Silent unlock buffer
+      const buffer = webAudioCtx.createBuffer(1, 1, 22050);
+      const source = webAudioCtx.createBufferSource();
       source.buffer = buffer;
-      source.connect(ctx.destination);
+      source.connect(webAudioCtx.destination);
       source.start(0);
     }
-  } catch (e) { /* swallow — fall through to Audio playback regardless */ }
+  } catch (e) { /* fall through */ }
   // Pre-create cached Audio instances so .play() is fast later.
   const allSources = [
     AUDIO.intro, AUDIO.preroll, AUDIO.begin, AUDIO.underway,
@@ -886,39 +885,39 @@ async function ensureAudio() {
     // Prime it with the first lap clip so iOS unlocks this element specifically.
     if (AUDIO.lap && AUDIO.lap[1]) lapAudio.src = AUDIO.lap[1];
   }
-  // Build the rotating beep instance pool — one set per beep type.
-  if (beepPool.shuttle.length === 0 && AUDIO.beepShuttle) {
-    for (let i = 0; i < BEEP_POOL_SIZE; i++) {
-      const a = new Audio();
-      a.preload = 'auto';
-      a.src = AUDIO.beepShuttle;
-      beepPool.shuttle.push(a);
-    }
-  }
-  if (beepPool.levelend.length === 0 && AUDIO.beepLevelEnd) {
-    for (let i = 0; i < BEEP_POOL_SIZE; i++) {
-      const a = new Audio();
-      a.preload = 'auto';
-      a.src = AUDIO.beepLevelEnd;
-      beepPool.levelend.push(a);
-    }
-  }
   audioReady = true;
 }
 
+/* Synthesized beep — fires a fresh OscillatorNode each call. Sample-accurate,
+   no per-element state, no play() interruption issues. The single shared
+   AudioContext handles all beeps for the entire test session. */
 function playBeep(type) {
-  const pool = beepPool[type];
-  if (!pool || pool.length === 0) {
-    // Fallback to single cached instance if pool isn't built yet.
+  if (!webAudioCtx) {
+    // Fallback to MP3 beep if Web Audio isn't available for some reason.
     playClip(type === 'levelend' ? AUDIO.beepLevelEnd : AUDIO.beepShuttle);
     return;
   }
-  const a = pool[beepPoolIdx[type]];
-  beepPoolIdx[type] = (beepPoolIdx[type] + 1) % pool.length;
+  if (webAudioCtx.state === 'suspended') {
+    webAudioCtx.resume().catch(() => {});
+  }
+  const isLevelEnd = (type === 'levelend');
+  const freq     = isLevelEnd ? 1320 : 880;
+  const duration = isLevelEnd ? 0.35 : 0.18;
+  const gain     = isLevelEnd ? 0.55 : 0.45;
+  const now = webAudioCtx.currentTime;
   try {
-    a.currentTime = 0;
-    const p = a.play();
-    if (p && typeof p.catch === 'function') p.catch(() => {});
+    const osc = webAudioCtx.createOscillator();
+    const g   = webAudioCtx.createGain();
+    osc.type  = 'sine';
+    osc.frequency.value = freq;
+    g.gain.setValueAtTime(0, now);
+    g.gain.linearRampToValueAtTime(gain, now + 0.005);
+    g.gain.setValueAtTime(gain, now + duration - 0.03);
+    g.gain.linearRampToValueAtTime(0.0001, now + duration);
+    osc.connect(g);
+    g.connect(webAudioCtx.destination);
+    osc.start(now);
+    osc.stop(now + duration + 0.05);
   } catch (e) {}
 }
 
