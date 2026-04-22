@@ -137,17 +137,30 @@
   .brand-title { font-weight: 400; font-size: 20px; letter-spacing: 0; }
   .brand-sub { font-weight: 400; font-size: 13px; color: var(--muted); letter-spacing: 0; margin-top: 2px; }
 
+  /* Status indicator — colored dot only, no text.
+     Gray = ready / paused. Pulsing red = running. Solid white = complete. */
   .header-meta {
-    display: flex; align-items: center; gap: 10px;
-    font-size: 14px; color: var(--muted); font-weight: 400;
-    font-variant-numeric: tabular-nums;
-    letter-spacing: 0;
+    display: flex; align-items: center;
+    width: 18px; height: 18px;
+    flex-shrink: 0;
   }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
-  .dot.live { background: var(--red); box-shadow: 0 0 0 0 rgba(214,40,40,0.7); animation: pulse 1.4s infinite; }
+  .header-meta .status-label { display: none; }
+  .dot {
+    width: 12px; height: 12px; border-radius: 50%;
+    background: var(--muted);
+    transition: background 0.25s ease;
+  }
+  .dot.live {
+    background: var(--red);
+    box-shadow: 0 0 0 0 rgba(214,40,40,0.7);
+    animation: pulse 1.4s infinite;
+  }
+  .dot.done {
+    background: var(--white);
+  }
   @keyframes pulse {
     0%   { box-shadow: 0 0 0 0 rgba(214,40,40,0.7); }
-    70%  { box-shadow: 0 0 0 12px rgba(214,40,40,0); }
+    70%  { box-shadow: 0 0 0 10px rgba(214,40,40,0); }
     100% { box-shadow: 0 0 0 0 rgba(214,40,40,0); }
   }
 
@@ -566,9 +579,9 @@
         <div class="brand-sub">20m Shuttle Run · Léger Protocol</div>
       </div>
     </div>
-    <div class="header-meta">
+    <div class="header-meta" role="status" aria-live="polite">
       <span class="dot" id="statusDot"></span>
-      <span id="statusText">Ready</span>
+      <span class="status-label" id="statusText">Ready</span>
     </div>
   </header>
 
@@ -690,6 +703,10 @@
       lines twenty meters apart at a pace that increases each minute. The test ends when an athlete
       can no longer keep up with the prescribed pace.
     </p>
+    <button class="modal-listen" id="listenBtn" type="button" aria-pressed="false">
+      <span class="listen-icon" aria-hidden="true">▶</span>
+      <span class="listen-label">Listen to instructions</span>
+    </button>
     <h3>How the test works</h3>
     <p>
       You'll run back and forth between two lines — set twenty meters apart.
@@ -713,10 +730,6 @@
     <p>
       When you're ready, line up at the start line — and play the test.
     </p>
-    <button class="modal-listen" id="listenBtn" type="button" aria-pressed="false">
-      <span class="listen-icon" aria-hidden="true">▶</span>
-      <span class="listen-label">Listen</span>
-    </button>
     <h3>Protocol</h3>
     <p>
       Léger, L.&nbsp;A. &amp; Lambert, J. (1982). A maximal multistage 20-m shuttle run test to
@@ -731,7 +744,7 @@
     <h3>Credits</h3>
     <p>
       Presidential Fitness Test — official re-launch, 2025.<br>
-      Audio, visuals, and protocol implementation by [Your Organization].
+      Audio, visuals, and protocol implementation by the National Foundation on Fitness, Sports and Nutrition.
     </p>
     <p class="modal-version">Version 1.0 · mockup</p>
     <button class="modal-done" id="infoDone" type="button">Done</button>
@@ -954,6 +967,7 @@ function scheduleUpcoming() {
 
     if (ev.type === 'beep') {
       const isEnd = ev.isLevelEnd && ev.level < PROTOCOL.length;
+      const lapInLevel = ev.lapInLevel;
       setTimeout(() => {
         if (!running || paused || !audioCtx) return;
         if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
@@ -961,6 +975,13 @@ function scheduleUpcoming() {
           ? { frequency: 1320, duration: 0.35, gain: 0.95, type: 'sine' }
           : { frequency: 880,  duration: 0.18, gain: 0.85, type: 'sine' };
         scheduleBeep(audioCtx.currentTime, opts);
+        // Lap number voice callout — fires ~250ms after the beep so it doesn't
+        // mask the beep itself. Resets per level via ev.lapInLevel.
+        if (!isEnd && AUDIO.lap && AUDIO.lap[lapInLevel]) {
+          setTimeout(() => {
+            if (running && !paused) playClip(AUDIO.lap[lapInLevel]);
+          }, 250);
+        }
       }, delayMs);
     } else if (ev.type === 'levelStart' && ev.level !== 1) {
       const lvl = ev.level;
@@ -1161,6 +1182,7 @@ async function start() {
   ui.pauseBtn.disabled = false;
   ui.finishBtn.disabled = false;
   ui.resetBtn.disabled = false;
+  ui.statusDot.classList.remove('done');
   ui.statusDot.classList.add('live');
   ui.statusText.textContent = 'Running';
   running = true; paused = false; pauseOffset = 0; lastBeatLap = 0;
@@ -1234,6 +1256,7 @@ function reset() {
   ui.finishBtn.disabled = true;
   ui.resetBtn.disabled = true;
   ui.statusDot.classList.remove('live');
+  ui.statusDot.classList.remove('done');
   ui.statusText.textContent = 'Ready';
   ui.level.textContent = '1';
   ui.speed.textContent = '5.3';  // 8.5 km/h in mph
@@ -1270,6 +1293,7 @@ function finish() {
 
   running = false;
   ui.statusDot.classList.remove('live');
+  ui.statusDot.classList.add('done');
   ui.statusText.textContent = 'Complete';
   ui.pauseBtn.disabled = true;
   ui.finishBtn.disabled = true;
@@ -1323,7 +1347,17 @@ const AUDIO = {
   beepShuttle:  'audio/beep_shuttle.mp3',   // 880Hz, 0.18s — every shuttle
   beepLevelEnd: 'audio/beep_levelend.mp3',  // 1320Hz, 0.35s — last shuttle of a level + start beep
   chimeLevelup: 'audio/chime_levelup.mp3',  // 660+990Hz fanfare — fires before "Level N" voice
+  // Lap-in-level voice — fires ~200ms after every beep. Resets to "One" at each level.
+  lap: {
+     1: 'audio/08_lap_01.mp3',  2: 'audio/08_lap_02.mp3',  3: 'audio/08_lap_03.mp3',
+     4: 'audio/08_lap_04.mp3',  5: 'audio/08_lap_05.mp3',  6: 'audio/08_lap_06.mp3',
+     7: 'audio/08_lap_07.mp3',  8: 'audio/08_lap_08.mp3',  9: 'audio/08_lap_09.mp3',
+    10: 'audio/08_lap_10.mp3', 11: 'audio/08_lap_11.mp3', 12: 'audio/08_lap_12.mp3',
+    13: 'audio/08_lap_13.mp3', 14: 'audio/08_lap_14.mp3', 15: 'audio/08_lap_15.mp3',
+    16: 'audio/08_lap_16.mp3',
+  },
   levels: {
+     1: 'audio/05_level_01.mp3',  // used at Level 1 halfway (test starts with "Go" instead)
      2: 'audio/05_level_02.mp3',  3: 'audio/05_level_03.mp3',  4: 'audio/05_level_04.mp3',
      5: 'audio/05_level_05.mp3',  6: 'audio/05_level_06.mp3',  7: 'audio/05_level_07.mp3',
      8: 'audio/05_level_08.mp3',  9: 'audio/05_level_09.mp3', 10: 'audio/05_level_10.mp3',
@@ -1340,13 +1374,14 @@ const AUDIO = {
    Level 1 is the exception: it plays "halfway" alone (no level prefix needed —
    the kid just started and the level number is on screen). */
 async function playHalfwayCue(level) {
-  if (level > 1 && AUDIO.levels[level]) {
+  // Always prefer the level-name prefix if we have it (now includes Level 1).
+  if (AUDIO.levels[level]) {
     await playAndWait(AUDIO.levels[level]);
   }
   if (AUDIO.halfway) {
     playOrSpeak(AUDIO.halfway, null);
   } else {
-    speak(level > 1 ? `Level ${level}, halfway done.` : 'Halfway done.');
+    speak(`Level ${level}, halfway done.`);
   }
 }
 
@@ -1389,7 +1424,7 @@ function setListenState(playing) {
   listenBtn.classList.toggle('playing', playing);
   listenBtn.setAttribute('aria-pressed', playing ? 'true' : 'false');
   listenBtn.querySelector('.listen-icon').textContent = playing ? '■' : '▶';
-  listenBtn.querySelector('.listen-label').textContent = playing ? 'Stop' : 'Listen';
+  listenBtn.querySelector('.listen-label').textContent = playing ? 'Stop' : 'Listen to instructions';
 }
 
 async function playInstructions() {
