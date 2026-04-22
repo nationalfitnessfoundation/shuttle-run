@@ -977,6 +977,7 @@ function scheduleUpcoming() {
     if (ev.type === 'beep') {
       const isEnd = ev.isLevelEnd && ev.level < PROTOCOL.length;
       const lapInLevel = ev.lapInLevel;
+      const lvl = ev.level;
       setTimeout(() => {
         if (!running || paused || !audioCtx) return;
         if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
@@ -984,18 +985,11 @@ function scheduleUpcoming() {
           ? { frequency: 1320, duration: 0.35, gain: 0.95, type: 'sine' }
           : { frequency: 880,  duration: 0.18, gain: 0.85, type: 'sine' };
         scheduleBeep(audioCtx.currentTime, opts);
-        // Lap number voice callout — uses a single shared Audio element with
-        // dynamic .src to avoid iOS concurrent-instance limits.
-        if (!isEnd && AUDIO.lap && AUDIO.lap[lapInLevel] && lapAudio) {
-          setTimeout(() => {
-            if (!running || paused) return;
-            try {
-              lapAudio.src = AUDIO.lap[lapInLevel];
-              lapAudio.currentTime = 0;
-              const p = lapAudio.play();
-              if (p && typeof p.catch === 'function') p.catch(() => {});
-            } catch (e) {}
-          }, 250);
+        // After each beep, chain "Level N" → "Y" via the single shared Audio
+        // element. Event-driven so the gap between the two clips matches the
+        // actual level-voice duration rather than a guessed setTimeout.
+        if (!isEnd && AUDIO.levels[lvl] && AUDIO.lap && AUDIO.lap[lapInLevel] && lapAudio) {
+          setTimeout(() => playLevelLapChain(lvl, lapInLevel), 250);
         }
       }, delayMs);
     } else if (ev.type === 'levelStart' && ev.level !== 1) {
@@ -1389,14 +1383,37 @@ const AUDIO = {
    Level 1 is the exception: it plays "halfway" alone (no level prefix needed —
    the kid just started and the level number is on screen). */
 async function playHalfwayCue(level) {
-  // Always prefer the level-name prefix if we have it (now includes Level 1).
-  if (AUDIO.levels[level]) {
-    await playAndWait(AUDIO.levels[level]);
-  }
-  if (AUDIO.halfway) {
-    playOrSpeak(AUDIO.halfway, null);
-  } else {
-    speak(`Level ${level}, halfway done.`);
+  // Halfway audio is intentionally silent now — replaced by the per-beep
+  // "Level N, Y" callout which provides continuous position feedback.
+  // Function kept as a no-op so the scheduler doesn't error.
+}
+
+/* Per-beep "Level N, Y" chain — uses the single shared lapAudio element.
+   Plays the level voice first; when that ends, swaps src to the lap voice and plays.
+   Single-element pattern keeps iOS from hitting concurrent-Audio limits. */
+function playLevelLapChain(level, lapInLevel) {
+  if (!lapAudio || !AUDIO.levels[level] || !AUDIO.lap[lapInLevel]) return;
+  const lapSrc = AUDIO.lap[lapInLevel];
+  const onLevelEnded = () => {
+    lapAudio.removeEventListener('ended', onLevelEnded);
+    if (!running || paused) return;
+    try {
+      lapAudio.src = lapSrc;
+      lapAudio.currentTime = 0;
+      const p = lapAudio.play();
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    } catch (e) {}
+  };
+  lapAudio.addEventListener('ended', onLevelEnded);
+  try {
+    lapAudio.src = AUDIO.levels[level];
+    lapAudio.currentTime = 0;
+    const p = lapAudio.play();
+    if (p && typeof p.catch === 'function') {
+      p.catch(() => lapAudio.removeEventListener('ended', onLevelEnded));
+    }
+  } catch (e) {
+    lapAudio.removeEventListener('ended', onLevelEnded);
   }
 }
 
