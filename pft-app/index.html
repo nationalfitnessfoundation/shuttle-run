@@ -824,8 +824,8 @@ const TOTAL_LAPS_ALL = PROTOCOL.reduce((a, b) => a + b.shuttles, 0);
 const audioCache = new Map();
 let audioReady = false;
 let lapAudio = null;            // single shared HTMLAudioElement for lap-number callouts
-let webAudioCtx = null;         // shared AudioContext for synthesized beeps
-                                // (much more reliable than HTMLAudioElement for short repeating sounds)
+let beepAudio = null;           // single shared HTMLAudioElement for beeps (src swaps shuttle ↔ levelend)
+let webAudioCtx = null;         // kept solely for iOS audio-session unlock
 let scheduledSources = [];   // legacy stub for finish/reset code
 let startAudioTime = 0;      // unused (legacy)
 let startWallMs   = 0;
@@ -877,47 +877,35 @@ async function ensureAudio() {
     ...Object.values(AUDIO.levels || {}),
   ].filter(Boolean);
   for (const src of allSources) getAudio(src);
-  // Lap-number callouts use a single shared Audio element with dynamic .src.
-  // iOS limits concurrent Audio instances; one shared element bypasses that.
+  // Lap-number callouts and beeps each use ONE shared HTMLAudioElement with
+  // dynamic .src. Same pattern, both proven reliable on iOS and desktop Safari.
   if (!lapAudio) {
     lapAudio = new Audio();
     lapAudio.preload = 'auto';
-    // Prime it with the first lap clip so iOS unlocks this element specifically.
     if (AUDIO.lap && AUDIO.lap[1]) lapAudio.src = AUDIO.lap[1];
+  }
+  if (!beepAudio) {
+    beepAudio = new Audio();
+    beepAudio.preload = 'auto';
+    if (AUDIO.beepShuttle) beepAudio.src = AUDIO.beepShuttle;
   }
   audioReady = true;
 }
 
-/* Synthesized beep — fires a fresh OscillatorNode each call. Sample-accurate,
-   no per-element state, no play() interruption issues. The single shared
-   AudioContext handles all beeps for the entire test session. */
+/* Beep playback — single shared Audio element, dynamic .src.
+   Mirrors the lapAudio pattern that's been bulletproof for voice clips. */
 function playBeep(type) {
-  if (!webAudioCtx) {
-    // Fallback to MP3 beep if Web Audio isn't available for some reason.
+  if (!beepAudio) {
     playClip(type === 'levelend' ? AUDIO.beepLevelEnd : AUDIO.beepShuttle);
     return;
   }
-  if (webAudioCtx.state === 'suspended') {
-    webAudioCtx.resume().catch(() => {});
-  }
-  const isLevelEnd = (type === 'levelend');
-  const freq     = isLevelEnd ? 1320 : 880;
-  const duration = isLevelEnd ? 0.35 : 0.18;
-  const gain     = isLevelEnd ? 0.55 : 0.45;
-  const now = webAudioCtx.currentTime;
+  const targetSrc = (type === 'levelend') ? AUDIO.beepLevelEnd : AUDIO.beepShuttle;
   try {
-    const osc = webAudioCtx.createOscillator();
-    const g   = webAudioCtx.createGain();
-    osc.type  = 'sine';
-    osc.frequency.value = freq;
-    g.gain.setValueAtTime(0, now);
-    g.gain.linearRampToValueAtTime(gain, now + 0.005);
-    g.gain.setValueAtTime(gain, now + duration - 0.03);
-    g.gain.linearRampToValueAtTime(0.0001, now + duration);
-    osc.connect(g);
-    g.connect(webAudioCtx.destination);
-    osc.start(now);
-    osc.stop(now + duration + 0.05);
+    // Only swap .src if it's actually different — saves a reload on identical beeps.
+    if (!beepAudio.src.endsWith(targetSrc)) beepAudio.src = targetSrc;
+    beepAudio.currentTime = 0;
+    const p = beepAudio.play();
+    if (p && typeof p.catch === 'function') p.catch(() => {});
   } catch (e) {}
 }
 
