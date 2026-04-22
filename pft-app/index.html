@@ -1,0 +1,1364 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
+<title>Presidential Fitness Test — 20m Shuttle Run</title>
+<meta name="description" content="Official re-launched Presidential Fitness Test · 20m Shuttle Run administered via the Léger protocol (Léger & Lambert, 1982). 21 progressive levels with beeps and voice announcements." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy-900: #050E2A;
+    --navy-800: #0A1A3C;
+    --navy-700: #13244F;
+    --navy-600: #1C2F63;
+    --white:    #FFFFFF;
+    --bone:     #F3F4F6;
+    --muted:    #B4C1D8;
+    --red:      #D62828;
+    --red-hot:  #EF3B3B;
+    --blue:     #3A6EA5;
+    --gold:     #F4C430;
+    --green:    #06A77D;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    font-family: 'Montserrat', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    font-weight: 400;
+    background: var(--navy-800);
+    color: var(--white);
+    min-height: 100vh;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Tricolor stripe intentionally removed — saving chrome for the data */
+  .stripe { display: none; }
+
+  /* Too-small gate. Below the threshold the entire app is hidden and the
+     gate panel renders in its place. Prevents the layout from ever rendering
+     in a broken state on tiny windows or rotated phones. */
+  .too-small-gate {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: var(--navy-800);
+    color: var(--white);
+    z-index: 200;
+    place-items: center;
+    padding: 32px;
+    text-align: center;
+  }
+  .too-small-gate strong {
+    display: block;
+    font-size: 22px;
+    font-weight: 800;
+    margin-bottom: 8px;
+  }
+  .too-small-gate p {
+    color: var(--muted);
+    font-size: 15px;
+    max-width: 320px;
+    line-height: 1.45;
+  }
+  @media (max-height: 380px), (max-width: 320px) {
+    .app { display: none; }
+    .too-small-gate { display: grid; }
+  }
+
+  .app {
+    display: grid;
+    grid-template-rows: auto 1fr auto auto;
+    height: 100vh;
+    height: 100dvh;
+  }
+
+  /* Accessible caption bar — live text of what's being spoken/shown.
+     Hidden by default; toggled via CC button. When hidden, its grid row
+     collapses and the main display gets the extra space back. */
+  .caption {
+    background: #000;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    padding: 14px 40px;
+    font-size: 20px;
+    font-weight: 400;
+    letter-spacing: 0;
+    text-align: center;
+    color: var(--white);
+    font-variant-numeric: tabular-nums;
+    min-height: 52px;
+    display: none;
+    align-items: center; justify-content: center;
+  }
+  .caption.visible { display: flex; }
+  .caption .cc-tag {
+    display: inline-block;
+    background: var(--white);
+    color: #000;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    padding: 3px 6px;
+    border-radius: 3px;
+    margin-right: 14px;
+    vertical-align: middle;
+  }
+
+  /* Header — kept minimal, no chrome */
+  header {
+    padding: 14px 40px 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    letter-spacing: 0.02em;
+  }
+  .shield {
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    background: var(--red);
+    display: grid;
+    place-items: center;
+    position: relative;
+  }
+  .shield::after { display: none; }
+  .shield svg { width: 18px; height: 18px; fill: var(--white); position: relative; z-index: 1; }
+  .brand-text { display: flex; flex-direction: column; line-height: 1.05; }
+  .brand-title { font-weight: 400; font-size: 20px; letter-spacing: 0; }
+  .brand-sub { font-weight: 400; font-size: 13px; color: var(--muted); letter-spacing: 0; margin-top: 2px; }
+
+  .header-meta {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 14px; color: var(--muted); font-weight: 400;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot.live { background: var(--red); box-shadow: 0 0 0 0 rgba(214,40,40,0.7); animation: pulse 1.4s infinite; }
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(214,40,40,0.7); }
+    70%  { box-shadow: 0 0 0 12px rgba(214,40,40,0); }
+    100% { box-shadow: 0 0 0 0 rgba(214,40,40,0); }
+  }
+
+  /* Main display — grid puts hero in its own row, track in its own row,
+     so they cannot overlap at any viewport height. Corners are absolutely
+     positioned to main's four corners and sit over both rows. */
+  main {
+    position: relative;
+    padding: 30px 50px 14px;
+    min-height: 0;
+    display: grid;
+    grid-template-rows: 1fr auto;
+    row-gap: 16px;
+    overflow: hidden;
+  }
+
+  /* Corner stats — absolutely pinned to main's four corners */
+  .corner {
+    position: absolute;
+    display: flex; flex-direction: column; gap: 2px;
+    color: var(--white);
+    pointer-events: none;
+  }
+  .corner-tl { top: 24px; left: 50px;  align-items: flex-start; }
+  .corner-tr { top: 24px; right: 50px; align-items: flex-end;   text-align: right; }
+  .corner-bl { bottom: 14px; left: 50px;  align-items: flex-start; }
+  .corner-br { bottom: 14px; right: 50px; align-items: flex-end;   text-align: right; }
+  .corner-label {
+    font-size: clamp(20px, 2.4vw, 40px);
+    color: var(--white); letter-spacing: 0;
+    font-weight: 400;
+    margin-bottom: 6px;
+  }
+  .corner-value {
+    font-size: clamp(36px, min(8vw, 13vh), 132px);
+    font-weight: 800; line-height: 1;
+    font-variant-numeric: tabular-nums; letter-spacing: -0.01em;
+    color: var(--white);
+  }
+  .corner-value .dim { color: var(--white); font-weight: 400; }
+
+  /* Hero: LAPS is the score. Solid red, flat, no gradient. */
+  .hero {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center;
+    padding-top: 10px;
+  }
+  .laps-label {
+    font-size: clamp(22px, 2.8vw, 46px);
+    color: var(--white); letter-spacing: 0; font-weight: 400;
+    margin-bottom: 6px;
+  }
+  .laps {
+    font-weight: 800;
+    /* Scale by whichever dimension is tighter — prevents overflow at short viewports */
+    font-size: clamp(90px, min(22vw, 30vh), 280px);
+    line-height: 0.9;
+    color: var(--white);
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Track: anchored to the bottom of main, centered between the Speed and Lap
+     corner stats. Narrower than before because it shares a horizontal band
+     with the bottom corners, not its own row. */
+  .track {
+    position: relative;
+    width: min(46%, 520px);
+    min-height: 80px;
+    padding: 0;
+    justify-self: center;
+    align-self: end;
+    margin-bottom: 6px;
+  }
+  .track-rail {
+    position: absolute;
+    left: 32px; right: 32px; top: 50%;
+    height: 2px;
+    background: repeating-linear-gradient(90deg,
+      rgba(255,255,255,0.18) 0 10px,
+      transparent 10px 20px);
+    transform: translateY(-1px);
+  }
+  .cone {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 44px; height: 52px;
+    display: flex; align-items: flex-end; justify-content: center;
+    pointer-events: none;
+  }
+  .cone.left  { left: 10px; }
+  .cone.right { right: 10px; }
+  .cone svg { width: 100%; height: 100%; display: block; }
+  /* A/B labels removed — redundant with the runner animation + caption */
+  .cone-label { display: none; }
+  .cone-ring {
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 90px; height: 90px;
+    transform: translate(-50%, -50%) scale(0.5);
+    border-radius: 50%;
+    border: 2px solid var(--red);
+    opacity: 0;
+    pointer-events: none;
+  }
+  .cone-ring.fire { animation: coneRing 0.55s ease-out; }
+  @keyframes coneRing {
+    0%   { opacity: 0.85; transform: translate(-50%,-50%) scale(0.5); }
+    100% { opacity: 0;    transform: translate(-50%,-50%) scale(1.6); }
+  }
+
+  /* Runner figure — outer handles position, inner handles direction flip,
+     svg handles the vertical bob animation (so they don't fight). */
+  .runner {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 64px; height: 64px;
+    color: var(--white);
+    will-change: transform;
+    display: flex; align-items: center; justify-content: center;
+    /* JS sets: transform: translate(<x>px, -50%) */
+  }
+  .runner-flip {
+    width: 100%; height: 100%;
+    transition: transform 0.12s ease-out;
+  }
+  .runner.face-left .runner-flip { transform: scaleX(-1); }
+  .runner .runner-glyph {
+    font-size: 64px;
+    color: var(--white);
+    font-variation-settings: 'FILL' 1, 'wght' 700, 'opsz' 48, 'GRAD' 0;
+    line-height: 1;
+    display: block;
+    animation: runnerBob 0.36s ease-in-out infinite alternate;
+  }
+  @keyframes runnerBob {
+    0%   { translate: 0 0; }
+    100% { translate: 0 -4px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .runner svg { animation: none; }
+    .cone-ring.fire { animation: none; }
+  }
+
+  /* Progress — a thin 2px strip at the very top of the viewport */
+  .progress-strip {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: rgba(255,255,255,0.06);
+    z-index: 10;
+  }
+  .progress-bar {
+    height: 100%;
+    background: var(--red);
+    width: 0%;
+    transition: width 0.3s linear;
+  }
+
+  /* Footer / controls */
+  footer {
+    padding: 22px 40px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    background: rgba(0,0,0,0.15);
+  }
+  .controls { display: flex; gap: 12px; align-items: center; }
+  button {
+    font: inherit;
+    font-weight: 600;
+    font-size: clamp(15px, 1.3vw, 20px);
+    letter-spacing: 0;
+    padding: 14px 28px;
+    border-radius: 10px;
+    border: 1.5px solid rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.05);
+    color: var(--white);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  button:hover:not(:disabled) { background: rgba(255,255,255,0.10); border-color: rgba(255,255,255,0.25); }
+  button:focus-visible { outline: 3px solid var(--white); outline-offset: 3px; }
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
+  button.primary {
+    background: var(--red);
+    border-color: var(--red);
+    padding: 14px 34px;
+    box-shadow: 0 8px 28px rgba(214,40,40,0.45);
+  }
+  button.primary:hover:not(:disabled) { background: var(--red-hot); border-color: var(--red-hot); }
+  button.cc-toggle {
+    padding: 14px 16px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    position: relative;
+  }
+  button.cc-toggle.on {
+    background: var(--white);
+    color: var(--navy-900);
+    border-color: var(--white);
+  }
+
+  .footer-note { font-size: 12px; color: var(--muted); letter-spacing: 0; font-weight: 400; }
+
+  /* Icon-only button (info, etc.) — same height as other buttons but compact */
+  button.icon-btn {
+    padding: 14px 16px;
+    line-height: 1;
+    min-width: 50px;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  /* Custom-drawn circled "i" — Unicode ⓘ doesn't respond to font-weight,
+     so we render our own using a bordered circle + bold lowercase i. */
+  .info-glyph {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    border: 2.5px solid currentColor;
+    font-weight: 800;
+    font-size: 14px;
+    line-height: 1;
+    padding-bottom: 1px; /* optical centering of the lowercase "i" */
+  }
+
+  /* About / info modal */
+  .modal {
+    position: fixed; inset: 0;
+    display: grid; place-items: center;
+    z-index: 300;
+  }
+  .modal[hidden] { display: none; }
+  .modal-backdrop {
+    position: absolute; inset: 0;
+    background: rgba(5, 14, 42, 0.78);
+    backdrop-filter: blur(6px);
+    cursor: pointer;
+  }
+  .modal-card {
+    position: relative;
+    z-index: 1;
+    width: min(560px, calc(100vw - 32px));
+    max-height: calc(100vh - 64px);
+    overflow-y: auto;
+    background: var(--navy-700);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px;
+    padding: 36px 36px 30px;
+    color: var(--white);
+    box-shadow: 0 24px 60px rgba(0,0,0,0.55);
+  }
+  .modal-close {
+    position: absolute;
+    top: 10px; right: 10px;
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    font-size: 28px;
+    line-height: 1;
+    padding: 6px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .modal-close:hover { color: var(--white); background: rgba(255,255,255,0.08); }
+  .modal-card h2 { font-size: 24px; font-weight: 800; margin-bottom: 14px; }
+  .modal-card h3 { font-size: 14px; font-weight: 800; margin-top: 18px; margin-bottom: 6px; color: var(--bone); }
+  .modal-card p { font-size: 14px; line-height: 1.55; color: var(--bone); margin-bottom: 6px; }
+  .modal-card .modal-lede { color: var(--white); font-size: 15px; }
+  .modal-card .modal-version { color: var(--muted); font-size: 12px; margin-top: 18px; }
+  .modal-listen {
+    display: inline-flex; align-items: center; gap: 10px;
+    margin-top: 10px; margin-bottom: 4px;
+    padding: 11px 22px;
+    border-radius: 999px;
+    border: 1.5px solid rgba(255,255,255,0.18);
+    background: rgba(255,255,255,0.06);
+    color: var(--white);
+    font-weight: 600;
+    font-size: 16px;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+  .modal-listen:hover { background: rgba(255,255,255,0.10); border-color: rgba(255,255,255,0.30); }
+  .modal-listen.playing { background: var(--red); border-color: var(--red); }
+  .modal-listen .listen-icon { font-size: 11px; line-height: 1; }
+
+  /* Intro / countdown overlay */
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 20px 40px;
+    background: rgba(5, 14, 42, 0.92);
+    backdrop-filter: blur(10px);
+    z-index: 5;
+    transition: opacity 0.3s ease;
+    text-align: center;
+  }
+  .overlay.hidden { opacity: 0; pointer-events: none; }
+  .countdown {
+    font-size: clamp(96px, min(20vw, 28vh), 240px);
+    font-weight: 800;
+    line-height: 1;
+    color: var(--white);
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    padding: 0 8px;
+    max-width: 100%;
+    display: inline-block;
+  }
+  .countdown-label {
+    font-size: clamp(20px, 2.2vw, 36px);
+    color: var(--white); letter-spacing: 0; font-weight: 400;
+    margin-top: 14px;
+  }
+
+  /* Finish screen */
+  .finish { text-align: center; display: grid; gap: 14px; }
+  .finish-title {
+    font-size: clamp(48px, 8vw, 96px);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--white);
+  }
+  .finish-sub { color: var(--white); font-size: clamp(18px, 2vw, 30px); font-weight: 400; }
+  .finish-score { font-size: 28px; color: var(--white); margin-top: 8px; font-variant-numeric: tabular-nums; }
+
+  /* Layout breakpoints — sizing is handled by clamp() above. These only adjust
+     the positions of corners and track at smaller viewports. */
+  @media (max-width: 900px) {
+    main { padding: 20px 26px 12px; }
+    header { padding: 12px 20px 6px; }
+    /* Keep all six footer buttons on one row — left group + right group, side by side. */
+    footer { padding: 12px 16px 16px; gap: 10px; }
+    .controls { gap: 8px; }
+    button { padding: 11px 18px; }
+    button.primary { padding: 11px 22px; }
+    button.icon-btn { padding: 11px 14px; min-width: 44px; }
+    .corner-tl, .corner-bl { left: 22px; }
+    .corner-tr, .corner-br { right: 22px; }
+    .corner-tl, .corner-tr { top: 16px; }
+    .corner-bl, .corner-br { bottom: 10px; }
+    .track { width: min(68%, 440px); min-height: 70px; }
+    .cone { width: 36px; height: 44px; }
+    .runner { width: 52px; height: 60px; }
+    .runner .runner-glyph { font-size: 52px; }
+  }
+  @media (max-width: 520px) {
+    main { padding: 16px 14px 8px; }
+    .corner-tl, .corner-bl { left: 12px; }
+    .corner-tr, .corner-br { right: 12px; }
+    .track { width: 88%; }
+    footer { padding: 10px 10px 14px; gap: 6px; }
+    .controls { gap: 5px; }
+    button { padding: 9px 12px; font-size: 13px; }
+    button.primary { padding: 9px 16px; }
+    button.icon-btn { padding: 9px 10px; min-width: 38px; font-size: 16px; }
+  }
+
+</style>
+</head>
+<body>
+<div class="stripe"></div>
+<div class="too-small-gate" role="alert" aria-live="polite">
+  <div>
+    <strong>Window too small</strong>
+    <p>This view needs more room to display the test properly. Rotate your device to landscape or expand your browser window.</p>
+  </div>
+</div>
+<div class="app" id="app">
+  <header>
+    <div class="brand">
+      <div class="shield" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M12 2 3 5v6c0 5 4 9 9 11 5-2 9-6 9-11V5l-9-3zm-1 14-4-4 1.4-1.4L11 13.2l5.6-5.6L18 9l-7 7z"/></svg>
+      </div>
+      <div class="brand-text">
+        <div class="brand-title">Presidential Fitness Test</div>
+        <div class="brand-sub">20m Shuttle Run · Léger Protocol</div>
+      </div>
+    </div>
+    <div class="header-meta">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText">Ready</span>
+    </div>
+  </header>
+
+  <main>
+    <div class="corner corner-tl">
+      <span class="corner-label">Time</span>
+      <span class="corner-value" id="elapsed">0:00</span>
+    </div>
+    <div class="corner corner-tr">
+      <span class="corner-label">Level</span>
+      <span class="corner-value" id="levelNum">1</span>
+    </div>
+    <div class="corner corner-bl">
+      <span class="corner-label">Speed · mph</span>
+      <span class="corner-value" id="speed">5.3</span>
+    </div>
+    <div class="corner corner-br">
+      <span class="corner-label">Lap</span>
+      <span class="corner-value"><span id="lap">0</span><span class="dim"> / </span><span id="lapTotal">7</span></span>
+    </div>
+
+    <div class="hero">
+      <div class="laps-label">Completed Laps</div>
+      <div class="laps" id="totalLaps">0</div>
+    </div>
+
+    <div class="track" id="track" aria-hidden="true">
+      <div class="track-rail"></div>
+
+      <div class="cone left" id="coneL">
+        <svg viewBox="0 0 40 50" xmlns="http://www.w3.org/2000/svg">
+          <!-- Traffic cone — orange with reflective stripes -->
+          <ellipse cx="20" cy="47" rx="18" ry="3" fill="rgba(0,0,0,0.35)"/>
+          <path d="M20 6 L31 44 L9 44 Z" fill="#D62828"/>
+          <!-- Stripes are trapezoids that taper with the cone, wider at bottom -->
+          <path d="M15 24 L25 24 L26 28 L14 28 Z" fill="#FFFFFF"/>
+          <path d="M12.5 32 L27.5 32 L28.5 36 L11.5 36 Z" fill="#FFFFFF"/>
+          <rect x="6" y="44" width="28" height="4" rx="1" fill="#2A2A2A"/>
+          <defs>
+            <linearGradient id="coneGrad" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stop-color="#fff" stop-opacity="0.5"/>
+              <stop offset="0.5" stop-color="#fff" stop-opacity="0"/>
+              <stop offset="1" stop-color="#000" stop-opacity="0.25"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <span class="cone-label">A</span>
+        <div class="cone-ring" id="ringL"></div>
+      </div>
+
+      <div class="cone right" id="coneR">
+        <svg viewBox="0 0 40 50" xmlns="http://www.w3.org/2000/svg">
+          <ellipse cx="20" cy="47" rx="18" ry="3" fill="rgba(0,0,0,0.35)"/>
+          <path d="M20 6 L31 44 L9 44 Z" fill="#D62828"/>
+          <!-- Stripes are trapezoids that taper with the cone, wider at bottom -->
+          <path d="M15 24 L25 24 L26 28 L14 28 Z" fill="#FFFFFF"/>
+          <path d="M12.5 32 L27.5 32 L28.5 36 L11.5 36 Z" fill="#FFFFFF"/>
+          <rect x="6" y="44" width="28" height="4" rx="1" fill="#2A2A2A"/>
+          <defs>
+            <linearGradient id="coneGrad2" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stop-color="#fff" stop-opacity="0.5"/>
+              <stop offset="0.5" stop-color="#fff" stop-opacity="0"/>
+              <stop offset="1" stop-color="#000" stop-opacity="0.25"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <span class="cone-label">B</span>
+        <div class="cone-ring" id="ringR"></div>
+      </div>
+
+      <div class="runner" id="runner">
+        <div class="runner-flip">
+          <span class="material-symbols-rounded runner-glyph" aria-hidden="true">directions_run</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="progress-strip" aria-hidden="true">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
+    <span id="nextBeep" hidden>—</span>
+
+    <div class="overlay" id="overlay">
+      <div id="overlayContent">
+        <div class="finish" id="introContent">
+          <div class="countdown" id="countdownNum">READY</div>
+          <div class="countdown-label" id="countdownLabel">Press Start to Begin</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <div class="caption" role="status" aria-live="polite" aria-atomic="true" id="caption">
+    <span class="cc-tag">CC</span><span id="captionText">Press Start to begin the 20-meter shuttle run.</span>
+  </div>
+
+  <footer>
+    <div class="controls">
+      <button class="primary" id="startBtn">Start Test</button>
+      <button id="pauseBtn" disabled>Pause</button>
+      <button id="finishBtn" disabled>Finish</button>
+      <button id="resetBtn" disabled>Reset</button>
+    </div>
+    <div class="controls">
+      <button class="icon-btn" id="infoBtn" title="About this test" aria-label="About this test"><span class="info-glyph" aria-hidden="true">i</span></button>
+      <button class="cc-toggle" id="ccBtn" aria-pressed="false" title="Toggle captions">CC</button>
+    </div>
+  </footer>
+</div>
+
+<!-- Info / About modal — citation, IP attribution, version, credits -->
+<div class="modal" id="infoModal" role="dialog" aria-modal="true" aria-labelledby="infoModalTitle" hidden>
+  <div class="modal-backdrop" data-close></div>
+  <div class="modal-card" role="document">
+    <button class="modal-close" id="infoClose" aria-label="Close">×</button>
+    <h2 id="infoModalTitle">About this test</h2>
+    <p class="modal-lede">
+      The twenty-meter shuttle run is a maximal aerobic-fitness assessment. Athletes run between two
+      lines twenty meters apart at a pace that increases each minute. The test ends when an athlete
+      can no longer keep up with the prescribed pace.
+    </p>
+    <h3>How the test works</h3>
+    <p>
+      You'll run back and forth between two lines — set twenty meters apart.
+    </p>
+    <p>
+      Stay in your lane. Each time you hear a beep, you should be at a line. Place your foot on,
+      or over the line, pivot, and run to the other side. Don't make wide turns — they cost you
+      time.
+    </p>
+    <p>
+      The pace starts slow and gets faster every minute.
+    </p>
+    <p>
+      When you can't reach the line in time on two beeps in a row, you're done. Leave the testing
+      area. And remember your final lap count — the big number on the screen — repeat it to
+      yourself a few times so you don't forget. That number is your score.
+    </p>
+    <p>
+      After you finish, walk for a few minutes to cool down. Don't sit down right away.
+    </p>
+    <p>
+      When you're ready, line up at the start line — and play the test.
+    </p>
+    <button class="modal-listen" id="listenBtn" type="button" aria-pressed="false">
+      <span class="listen-icon" aria-hidden="true">▶</span>
+      <span class="listen-label">Listen</span>
+    </button>
+    <h3>Protocol</h3>
+    <p>
+      Léger, L.&nbsp;A. &amp; Lambert, J. (1982). A maximal multistage 20-m shuttle run test to
+      predict VO<sub>2</sub> max. <em>European Journal of Applied Physiology,</em> 49(1):&nbsp;1–12.
+    </p>
+    <h3>Implementation</h3>
+    <p>
+      Twenty-one progressive levels, two-hundred-forty-four total shuttles, ~21 minutes maximum
+      duration. Beep timings derived from the published Léger formula
+      (shuttle&nbsp;duration&nbsp;=&nbsp;72&nbsp;÷&nbsp;speed&nbsp;in&nbsp;km/h).
+    </p>
+    <h3>Credits</h3>
+    <p>
+      Presidential Fitness Test — official re-launch, 2025.<br>
+      Audio, visuals, and protocol implementation by [Your Organization].
+    </p>
+    <p class="modal-version">Version 1.0 · mockup</p>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   Presidential Fitness Test — 20m Shuttle Run
+   Léger & Lambert (1982) protocol. 21 progressive levels.
+   ============================================================ */
+const PROTOCOL = [
+  { level: 1,  speed: 8.5,  shuttles: 7  },
+  { level: 2,  speed: 9.0,  shuttles: 8  },
+  { level: 3,  speed: 9.5,  shuttles: 8  },
+  { level: 4,  speed: 10.0, shuttles: 8  },
+  { level: 5,  speed: 10.5, shuttles: 9  },
+  { level: 6,  speed: 11.0, shuttles: 9  },
+  { level: 7,  speed: 11.5, shuttles: 10 },
+  { level: 8,  speed: 12.0, shuttles: 10 },
+  { level: 9,  speed: 12.5, shuttles: 11 },
+  { level: 10, speed: 13.0, shuttles: 11 },
+  { level: 11, speed: 13.5, shuttles: 12 },
+  { level: 12, speed: 14.0, shuttles: 12 },
+  { level: 13, speed: 14.5, shuttles: 13 },
+  { level: 14, speed: 15.0, shuttles: 13 },
+  { level: 15, speed: 15.5, shuttles: 13 },
+  { level: 16, speed: 16.0, shuttles: 14 },
+  { level: 17, speed: 16.5, shuttles: 14 },
+  { level: 18, speed: 17.0, shuttles: 15 },
+  { level: 19, speed: 17.5, shuttles: 15 },
+  { level: 20, speed: 18.0, shuttles: 16 },
+  { level: 21, speed: 18.5, shuttles: 16 },
+];
+
+// Build the full shuttle schedule (times in seconds from start)
+function buildSchedule() {
+  const events = []; // { t, type: 'beep'|'levelStart'|'halfway', level, ... }
+  let t = 0;
+  let totalLap = 0;
+  for (let i = 0; i < PROTOCOL.length; i++) {
+    const L = PROTOCOL[i];
+    const shuttleTime = 72 / L.speed; // seconds per 20m at this speed
+    const levelDuration = L.shuttles * shuttleTime;
+    // Level start marker (for announcement)
+    events.push({ t: t, type: 'levelStart', level: L.level, speed: L.speed, shuttles: L.shuttles });
+    // Halfway marker (for "Level N halfway" callout)
+    events.push({ t: t + levelDuration / 2, type: 'halfway', level: L.level });
+    for (let s = 1; s <= L.shuttles; s++) {
+      const beepT = t + s * shuttleTime;
+      totalLap += 1;
+      events.push({
+        t: beepT,
+        type: 'beep',
+        level: L.level,
+        lapInLevel: s,
+        lapTotal: L.shuttles,
+        totalLap: totalLap,
+        isLevelEnd: (s === L.shuttles),
+        speed: L.speed,
+      });
+    }
+    t += levelDuration;
+  }
+  // Sort by time so the rolling scheduler walks them in order.
+  events.sort((a, b) => a.t - b.t);
+  return { events, duration: t };
+}
+
+const SCHEDULE = buildSchedule();
+const TOTAL_DURATION = SCHEDULE.duration;
+const TOTAL_LAPS_ALL = PROTOCOL.reduce((a, b) => a + b.shuttles, 0);
+
+/* --- Audio engine --- */
+let audioCtx = null;
+let masterGain = null;
+let scheduledSources = [];
+let startAudioTime = 0;   // audioCtx.currentTime when test begins (audio scheduling)
+let startWallMs   = 0;    // performance.now() when test begins (UI timing)
+let pauseOffset = 0;      // total seconds elapsed when paused
+let running = false;
+let paused = false;
+
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  masterGain = audioCtx.createGain();
+  masterGain.gain.value = 0.95;
+  masterGain.connect(audioCtx.destination);
+}
+// Safety: some browsers can auto-suspend the context. Re-wake on visibility/focus.
+document.addEventListener('visibilitychange', () => {
+  if (audioCtx && audioCtx.state === 'suspended' && document.visibilityState === 'visible') {
+    audioCtx.resume().catch(() => {});
+  }
+});
+
+function scheduleBeep(when, { frequency = 880, duration = 0.18, gain = 0.6, type = 'sine' } = {}) {
+  // Safety: if the context is suspended at schedule time, try to wake it.
+  if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+  const osc = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.value = frequency;
+  g.gain.setValueAtTime(0, when);
+  g.gain.linearRampToValueAtTime(gain, when + 0.01);
+  g.gain.setValueAtTime(gain, when + Math.max(0.015, duration - 0.04));
+  g.gain.linearRampToValueAtTime(0.0001, when + duration);
+  osc.connect(g); g.connect(masterGain);
+  osc.start(when);
+  osc.stop(when + duration + 0.05);
+  // Keep BOTH refs so the gain node isn't garbage-collected before it plays.
+  scheduledSources.push(osc, g);
+}
+
+function scheduleLevelFanfare(when) {
+  // Two-tone rising pair before the announcement
+  scheduleBeep(when,        { frequency: 660, duration: 0.15, gain: 0.5, type: 'triangle' });
+  scheduleBeep(when + 0.18, { frequency: 990, duration: 0.22, gain: 0.6, type: 'triangle' });
+}
+
+/* --- Speech --- */
+let voice = null;
+function pickVoice() {
+  const voices = speechSynthesis.getVoices();
+  // Prefer a clear English voice
+  const preferred = voices.find(v => /en-US/i.test(v.lang) && /Google|Samantha|Alex|Natural|Zira|Aria/i.test(v.name))
+                 || voices.find(v => /en/i.test(v.lang));
+  voice = preferred || voices[0] || null;
+}
+if ('speechSynthesis' in window) {
+  pickVoice();
+  speechSynthesis.addEventListener('voiceschanged', pickVoice);
+}
+function speak(text, delayMs = 0) {
+  if (!('speechSynthesis' in window)) return;
+  setTimeout(() => {
+    try {
+      const u = new SpeechSynthesisUtterance(text);
+      if (voice) u.voice = voice;
+      u.rate = 1.0; u.pitch = 1.0; u.volume = 1.0;
+      speechSynthesis.cancel();
+      speechSynthesis.speak(u);
+    } catch (e) {}
+  }, delayMs);
+}
+
+/* --- Rolling audio scheduler ---
+   Instead of scheduling all 244 beeps at start (which Chrome can silently drop),
+   we maintain a pointer into SCHEDULE.events and each tick() looks ahead a short
+   horizon (2 seconds) to schedule any beeps coming due. Small working set, no
+   GC risk, no browser throttling on long-horizon oscillators. */
+const LOOKAHEAD_SEC = 2.0;
+let scheduleIndex = 0;
+
+function resetSchedule(fromOffset = 0) {
+  scheduledSources.forEach(s => { if (typeof s.stop === 'function') { try { s.stop(); } catch(e){} } });
+  scheduledSources = [];
+  startAudioTime = audioCtx.currentTime - fromOffset;
+  startWallMs    = performance.now() - fromOffset * 1000;
+  // Advance the index past any events whose time has already passed.
+  scheduleIndex = 0;
+  while (scheduleIndex < SCHEDULE.events.length &&
+         SCHEDULE.events[scheduleIndex].t < fromOffset) {
+    scheduleIndex++;
+  }
+}
+
+function scheduleUpcoming() {
+  if (!audioCtx || !running || paused) return;
+  // Nudge a suspended context awake (Safari does this silently sometimes).
+  if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+
+  // Wall-clock reference — immune to audioCtx stalls.
+  const now = (performance.now() - startWallMs) / 1000;
+
+  // Instead of scheduling oscillators for a time in the future (which Safari
+  // handles unreliably), we setTimeout() the event to its wall-clock moment,
+  // then at that moment we fire scheduleBeep(audioCtx.currentTime). Playing
+  // "now" is the code path every browser handles correctly.
+  while (scheduleIndex < SCHEDULE.events.length) {
+    const ev = SCHEDULE.events[scheduleIndex];
+    if (ev.t > now + LOOKAHEAD_SEC) break;
+    const delayMs = Math.max(0, (ev.t - now) * 1000);
+
+    if (ev.type === 'beep') {
+      const isEnd = ev.isLevelEnd && ev.level < PROTOCOL.length;
+      setTimeout(() => {
+        if (!running || paused || !audioCtx) return;
+        if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+        const opts = isEnd
+          ? { frequency: 1320, duration: 0.35, gain: 0.95, type: 'sine' }
+          : { frequency: 880,  duration: 0.18, gain: 0.85, type: 'sine' };
+        scheduleBeep(audioCtx.currentTime, opts);
+      }, delayMs);
+    } else if (ev.type === 'levelStart' && ev.level !== 1) {
+      const lvl = ev.level;
+      setTimeout(() => {
+        if (!running || paused || !audioCtx) return;
+        if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+        scheduleLevelFanfare(audioCtx.currentTime);
+        setTimeout(() => {
+          if (!running || paused) return;
+          playOrSpeak(AUDIO.levels[lvl], `Level ${lvl}`);
+        }, 400);
+      }, delayMs);
+    } else if (ev.type === 'halfway') {
+      const lvl = ev.level;
+      setTimeout(() => {
+        if (!running || paused) return;
+        playHalfwayCue(lvl);
+      }, delayMs);
+    }
+    scheduleIndex++;
+  }
+
+  // Trim already-played sources so the array doesn't grow unbounded.
+  if (scheduledSources.length > 40) {
+    scheduledSources = scheduledSources.slice(-40);
+  }
+}
+
+/* --- UI refs --- */
+const $ = id => document.getElementById(id);
+const ui = {
+  level: $('levelNum'), speed: $('speed'), lap: $('lap'), lapTotal: $('lapTotal'),
+  totalLaps: $('totalLaps'), elapsed: $('elapsed'), nextBeep: $('nextBeep'),
+  progressBar: $('progressBar'),
+  track: $('track'), runner: $('runner'),
+  ringL: $('ringL'), ringR: $('ringR'),
+  startBtn: $('startBtn'), pauseBtn: $('pauseBtn'), finishBtn: $('finishBtn'), resetBtn: $('resetBtn'),
+  overlay: $('overlay'), introContent: $('introContent'),
+  countdownNum: $('countdownNum'), countdownLabel: $('countdownLabel'),
+  statusDot: $('statusDot'), statusText: $('statusText'),
+  caption: $('captionText'),
+  captionBar: $('caption'),
+  ccBtn: $('ccBtn'),
+};
+function setCaption(text) { if (ui.caption) ui.caption.textContent = text; }
+function toggleCaptions() {
+  const on = ui.captionBar.classList.toggle('visible');
+  ui.ccBtn.classList.toggle('on', on);
+  ui.ccBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+}
+
+function fmtTime(s) {
+  s = Math.max(0, Math.floor(s));
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${m}:${sec.toString().padStart(2,'0')}`;
+}
+
+let tickHandle = null;
+let lastBeatLap = 0;
+function tick() {
+  if (!running || paused) return;
+  // Rolling schedule — each frame queue up any beeps within the lookahead window.
+  scheduleUpcoming();
+  // UI timing uses wall clock so Safari's audioCtx stalls can't freeze the display.
+  const now = (performance.now() - startWallMs) / 1000;
+  // Find current state
+  let curLevel = PROTOCOL[0];
+  let lapInLevel = 0;
+  let totalLap = 0;
+  let nextBeepT = null;
+  let lastBeepPassed = 0;
+
+  // Walk events once — schedule is sorted.
+  // When a level-end beep is the most recent event and there's another level after it,
+  // immediately roll the display forward to the new level (lap 0 of N) instead of
+  // lingering on the old level's "7/7" until the next beep fires.
+  for (const ev of SCHEDULE.events) {
+    if (ev.type !== 'beep') continue;
+    if (ev.t <= now) {
+      if (ev.isLevelEnd && ev.level < PROTOCOL.length) {
+        curLevel   = PROTOCOL[ev.level];   // next level (ev.level is 1-indexed)
+        lapInLevel = 0;
+      } else {
+        curLevel   = PROTOCOL[ev.level - 1];
+        lapInLevel = ev.lapInLevel;
+      }
+      totalLap = ev.totalLap;
+      lastBeepPassed = ev.t;
+    } else {
+      nextBeepT = ev.t;
+      break;
+    }
+  }
+
+  // Shuttle direction — alternates.
+  // totalLap = completed shuttles. We're currently running shuttle (totalLap+1).
+  // If totalLap is even, we're going A→B (right). If odd, B→A (left).
+  const goingRight = (totalLap % 2 === 0);
+
+  // Runner position along track, interpolated between last and next beep.
+  const shuttleStart = lastBeepPassed;          // 0 if none yet
+  const shuttleEnd   = (nextBeepT !== null) ? nextBeepT : shuttleStart;
+  const shuttleDur   = Math.max(0.001, shuttleEnd - shuttleStart);
+  const shuttleProg  = Math.min(1, Math.max(0, (now - shuttleStart) / shuttleDur));
+  const p = goingRight ? shuttleProg : (1 - shuttleProg);
+
+  // Track geometry — measured live so it works at any breakpoint.
+  const trackRect  = ui.track.getBoundingClientRect();
+  const runnerRect = ui.runner.getBoundingClientRect();
+  const coneRect   = document.querySelector('.cone.left').getBoundingClientRect();
+  const conePad    = Math.max(coneRect.width, 40) + 8;  // past the cone + breathing
+  const LEFT_EDGE  = conePad;
+  const RIGHT_EDGE = trackRect.width - conePad - runnerRect.width;
+  const usable     = Math.max(0, RIGHT_EDGE - LEFT_EDGE);
+  const x          = LEFT_EDGE + p * usable;
+
+  ui.runner.style.transform = `translate(${x}px, -50%)`;
+  ui.runner.classList.toggle('face-left', !goingRight);
+
+  ui.level.textContent = curLevel.level;
+  ui.speed.textContent = (curLevel.speed * 0.621371).toFixed(1);  // km/h → mph for US audience
+  ui.lap.textContent = lapInLevel;
+  ui.lapTotal.textContent = curLevel.shuttles;
+  ui.totalLaps.textContent = totalLap;
+  ui.elapsed.textContent = fmtTime(now);
+  ui.progressBar.style.width = Math.min(100, (now / TOTAL_DURATION) * 100).toFixed(2) + '%';
+
+  if (nextBeepT !== null) {
+    const dt = nextBeepT - now;
+    ui.nextBeep.textContent = dt.toFixed(1) + 's';
+  } else {
+    ui.nextBeep.textContent = '—';
+  }
+
+  // New lap fired? Flash the cone the runner just touched.
+  if (totalLap !== lastBeatLap && totalLap > 0) {
+    lastBeatLap = totalLap;
+    // If we JUST completed shuttle N, the runner touched the cone opposite to where N started.
+    // Shuttle 1 ends at B (totalLap=1 → odd → ring R). Shuttle 2 ends at A. So:
+    const ring = (totalLap % 2 === 1) ? ui.ringR : ui.ringL;
+    ring.classList.remove('fire');
+    void ring.offsetWidth;
+    ring.classList.add('fire');
+    // After beep N: runner just touched the opposite cone, now heads back.
+    // totalLap odd → runner at right cone → next run is to the left.
+    // totalLap even → runner at left cone → next run is to the right.
+    const nextDir = (totalLap % 2 === 1) ? 'left' : 'right';
+    setCaption(`Level ${curLevel.level} · ${(curLevel.speed * 0.621371).toFixed(1)} mph · Lap ${lapInLevel} of ${curLevel.shuttles} · Run ${nextDir}`);
+  }
+
+  // End
+  if (now >= TOTAL_DURATION) {
+    finish();
+    return;
+  }
+
+  tickHandle = requestAnimationFrame(tick);
+}
+
+/* --- Controls --- */
+async function doCountdown(seconds = 5) {
+  ui.overlay.classList.remove('hidden');
+  ui.introContent.innerHTML = `
+    <div class="countdown" id="cdn">${seconds}</div>
+    <div class="countdown-label">Get Ready</div>
+  `;
+  const cdn = document.getElementById('cdn');
+  for (let n = seconds; n > 0; n--) {
+    cdn.textContent = n;
+    setCaption(`Get ready — starting in ${n}…`);
+    if (AUDIO.countdown[n]) {
+      playOrSpeak(AUDIO.countdown[n], null);
+    } else {
+      scheduleBeep(audioCtx.currentTime, { frequency: 520, duration: 0.12, gain: 0.5, type: 'sine' });
+    }
+    await sleep(1000);
+  }
+  ui.overlay.classList.add('hidden');
+  // The start beep + timer + voice are fired in start() right after this returns,
+  // so the beep is the true start cue (kids should run on the beep, not the voice).
+}
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function start() {
+  // Stop instructions if they're playing, close the info modal if it's open.
+  stopInstructions();
+  if (!infoModal.hidden) closeInfo();
+
+  initAudio();
+  if (audioCtx.state === 'suspended') await audioCtx.resume();
+  ui.startBtn.disabled = true;
+  ui.pauseBtn.disabled = false;
+  ui.finishBtn.disabled = false;
+  ui.resetBtn.disabled = false;
+  ui.statusDot.classList.add('live');
+  ui.statusText.textContent = 'Running';
+  running = true; paused = false; pauseOffset = 0; lastBeatLap = 0;
+
+  // Pre-roll: "Line up on the start line. The test begins in five seconds."
+  // Then immediately into the 5-second countdown.
+  ui.overlay.classList.remove('hidden');
+  ui.introContent.innerHTML = `
+    <div class="countdown">Ready</div>
+    <div class="countdown-label">Line up on the start line.</div>
+  `;
+  setCaption('Line up on the start line. The test begins in five seconds.');
+  if (AUDIO.preroll) await playAndWait(AUDIO.preroll);
+
+  await doCountdown(5);
+
+  // Start cue — beep + "Go" + test timer, all simultaneous.
+  // Kids run on the beep. The runner visual, audio beep, and kid are synced.
+  scheduleBeep(audioCtx.currentTime, { frequency: 1320, duration: 0.35, gain: 0.95, type: 'sine' });
+  startAudioTime = audioCtx.currentTime;
+  startWallMs    = performance.now();
+  resetSchedule(0);
+  scheduleUpcoming();
+  playOrSpeak(AUDIO.begin, 'Go.');
+  // After "Go" finishes, follow with "The test is underway." — Léger-style
+  // commentary that confirms the test has started. Fits well within the
+  // 8.5-second first shuttle.
+  setTimeout(() => {
+    if (running && !paused) playOrSpeak(AUDIO.underway, 'The test is underway.');
+  }, 900);
+  setCaption('Level 1 · 5.3 mph. Run to the far line.');
+  tickHandle = requestAnimationFrame(tick);
+}
+
+function pause() {
+  if (!running) return;
+  if (!paused) {
+    paused = true;
+    pauseOffset = (performance.now() - startWallMs) / 1000;
+    scheduledSources.forEach(s => { if (typeof s.stop === 'function') { try { s.stop(); } catch(e){} } });
+    scheduledSources = [];
+    cancelAnimationFrame(tickHandle);
+    ui.pauseBtn.textContent = 'Resume';
+    ui.statusDot.classList.remove('live');
+    ui.statusText.textContent = 'Paused';
+    setCaption('Paused.');
+    speechSynthesis.cancel();
+  } else {
+    paused = false;
+    startAudioTime = audioCtx.currentTime - pauseOffset;
+    startWallMs    = performance.now() - pauseOffset * 1000;
+    resetSchedule(pauseOffset);
+    scheduleUpcoming();
+    tickHandle = requestAnimationFrame(tick);
+    ui.pauseBtn.textContent = 'Pause';
+    ui.statusDot.classList.add('live');
+    ui.statusText.textContent = 'Running';
+    setCaption('Resuming…');
+  }
+}
+
+function reset() {
+  running = false; paused = false; pauseOffset = 0; lastBeatLap = 0;
+  scheduledSources.forEach(s => { if (typeof s.stop === 'function') { try { s.stop(); } catch(e){} } });
+  scheduledSources = [];
+  cancelAnimationFrame(tickHandle);
+  speechSynthesis.cancel();
+  ui.startBtn.disabled = false;
+  ui.pauseBtn.disabled = true;
+  ui.pauseBtn.textContent = 'Pause';
+  ui.finishBtn.disabled = true;
+  ui.resetBtn.disabled = true;
+  ui.statusDot.classList.remove('live');
+  ui.statusText.textContent = 'Ready';
+  ui.level.textContent = '1';
+  ui.speed.textContent = '5.3';  // 8.5 km/h in mph
+  ui.lap.textContent = '0';
+  ui.lapTotal.textContent = '7';
+  ui.totalLaps.textContent = '0';
+  ui.elapsed.textContent = '0:00';
+  ui.nextBeep.textContent = '—';
+  ui.progressBar.style.width = '0%';
+  // Runner back to Line A, facing right
+  ui.runner.classList.remove('face-left');
+  ui.runner.style.transform = 'translate(58px, -50%)';  // parked at left cone
+  ui.ringL.classList.remove('fire');
+  ui.ringR.classList.remove('fire');
+  ui.overlay.classList.remove('hidden');
+  ui.introContent.innerHTML = `
+    <div class="countdown">READY</div>
+    <div class="countdown-label">Press Start to Begin</div>
+  `;
+  setCaption('Press Start to begin the 20-meter shuttle run.');
+}
+
+function finish() {
+  // Stop audio immediately so the close clip plays cleanly.
+  scheduledSources.forEach(s => { if (typeof s.stop === 'function') { try { s.stop(); } catch(e){} } });
+  scheduledSources = [];
+  speechSynthesis.cancel();
+  cancelAnimationFrame(tickHandle);
+
+  // Snapshot the final lap count from current UI state (could be mid-test if Finish was pressed early).
+  const finalLaps = parseInt(ui.totalLaps.textContent, 10) || 0;
+  const finalLevel = ui.level.textContent || '1';
+  const finalDistanceKm = (finalLaps * 20 / 1000).toFixed(2);
+
+  running = false;
+  ui.statusDot.classList.remove('live');
+  ui.statusText.textContent = 'Complete';
+  ui.pauseBtn.disabled = true;
+  ui.finishBtn.disabled = true;
+  ui.startBtn.disabled = false;
+  ui.startBtn.textContent = 'Restart';
+  ui.overlay.classList.remove('hidden');
+  ui.introContent.innerHTML = `
+    <div class="finish">
+      <div class="finish-title">Test Complete</div>
+      <div class="finish-sub">Great effort. Walk to recover.</div>
+      <div class="finish-score">Final score: ${finalLaps} laps · Level ${finalLevel} · ${finalDistanceKm} km</div>
+    </div>
+  `;
+  setCaption(`Test complete. ${finalLaps} laps · Level ${finalLevel}.`);
+  playOrSpeak(AUDIO.close, 'Test complete. Great effort. Walk to recover.');
+}
+
+ui.startBtn.addEventListener('click', () => {
+  if (ui.startBtn.textContent === 'Restart') { reset(); ui.startBtn.textContent = 'Start Test'; }
+  start();
+});
+ui.pauseBtn.addEventListener('click', pause);
+ui.resetBtn.addEventListener('click', reset);
+ui.finishBtn.addEventListener('click', finish);
+ui.ccBtn.addEventListener('click', toggleCaptions);
+
+/* --- About / info modal --- */
+const infoModal = document.getElementById('infoModal');
+function openInfo()  { infoModal.hidden = false; document.getElementById('infoClose').focus(); }
+function closeInfo() { infoModal.hidden = true; stopInstructions(); }
+document.getElementById('infoBtn').addEventListener('click', openInfo);
+document.getElementById('infoClose').addEventListener('click', closeInfo);
+infoModal.querySelector('[data-close]').addEventListener('click', closeInfo);
+
+/* --- Voice asset registry.
+   Real recorded MP3s drop in here as they arrive. Missing entries fall back
+   to browser TTS via playOrSpeak(). */
+const AUDIO = {
+  intro:    'audio/01_intro.mp3',
+  preroll:  'audio/02_preroll.mp3',
+  countdown: {
+    1: 'audio/03_countdown_1.mp3',
+    2: 'audio/03_countdown_2.mp3',
+    3: 'audio/03_countdown_3.mp3',
+    4: 'audio/03_countdown_4.mp3',
+    5: 'audio/03_countdown_5.mp3',
+  },
+  begin:    'audio/04_begin.mp3',
+  underway: 'audio/04b_underway.mp3',  // plays right after Go — "The test is underway."
+  levels: {
+     2: 'audio/05_level_02.mp3',  3: 'audio/05_level_03.mp3',  4: 'audio/05_level_04.mp3',
+     5: 'audio/05_level_05.mp3',  6: 'audio/05_level_06.mp3',  7: 'audio/05_level_07.mp3',
+     8: 'audio/05_level_08.mp3',  9: 'audio/05_level_09.mp3', 10: 'audio/05_level_10.mp3',
+    11: 'audio/05_level_11.mp3', 12: 'audio/05_level_12.mp3', 13: 'audio/05_level_13.mp3',
+    14: 'audio/05_level_14.mp3', 15: 'audio/05_level_15.mp3', 16: 'audio/05_level_16.mp3',
+    17: 'audio/05_level_17.mp3', 18: 'audio/05_level_18.mp3', 19: 'audio/05_level_19.mp3',
+    20: 'audio/05_level_20.mp3', 21: 'audio/05_level_21.mp3',
+  },
+  halfway:  'audio/06_halfway.mp3', // single shared clip — played after AUDIO.levels[N] at midpoint
+  close:    'audio/07_close.mp3',
+};
+
+/* Play "Level N" then "halfway" sequentially at the midpoint of level N.
+   Level 1 is the exception: it plays "halfway" alone (no level prefix needed —
+   the kid just started and the level number is on screen). */
+async function playHalfwayCue(level) {
+  if (level > 1 && AUDIO.levels[level]) {
+    await playAndWait(AUDIO.levels[level]);
+  }
+  if (AUDIO.halfway) {
+    playOrSpeak(AUDIO.halfway, null);
+  } else {
+    speak(level > 1 ? `Level ${level}, halfway done.` : 'Halfway done.');
+  }
+}
+
+/* Fire-and-forget: play the audio if we have it, else speak the fallback text. */
+function playOrSpeak(audioSrc, fallbackText) {
+  if (audioSrc) {
+    try {
+      const a = new Audio(audioSrc);
+      a.play().catch(() => { if (fallbackText) speak(fallbackText); });
+      return a;
+    } catch (e) { /* fall through */ }
+  }
+  if (fallbackText) speak(fallbackText);
+  return null;
+}
+
+/* Await-able audio play — resolves when the clip ends or errors. */
+function playAndWait(audioSrc) {
+  return new Promise((resolve) => {
+    if (!audioSrc) { resolve(); return; }
+    try {
+      const a = new Audio(audioSrc);
+      const done = () => {
+        a.removeEventListener('ended', done);
+        a.removeEventListener('error', done);
+        resolve();
+      };
+      a.addEventListener('ended', done);
+      a.addEventListener('error', done);
+      a.play().catch(done);
+    } catch (e) { resolve(); }
+  });
+}
+
+/* --- Instructions (Asset 1) — Listen button in the info modal. */
+const listenBtn = document.getElementById('listenBtn');
+let instructionsAudio = null;
+
+function setListenState(playing) {
+  listenBtn.classList.toggle('playing', playing);
+  listenBtn.setAttribute('aria-pressed', playing ? 'true' : 'false');
+  listenBtn.querySelector('.listen-icon').textContent = playing ? '■' : '▶';
+  listenBtn.querySelector('.listen-label').textContent = playing ? 'Stop' : 'Listen';
+}
+
+function playInstructions() {
+  if (instructionsAudio) { stopInstructions(); return; }
+  if (!AUDIO.intro) { setListenState(false); return; }
+  try {
+    instructionsAudio = new Audio(AUDIO.intro);
+    instructionsAudio.addEventListener('ended', () => { instructionsAudio = null; setListenState(false); });
+    instructionsAudio.addEventListener('error', () => { instructionsAudio = null; setListenState(false); });
+    instructionsAudio.play().catch(() => { instructionsAudio = null; setListenState(false); });
+    setListenState(true);
+  } catch (e) {
+    instructionsAudio = null;
+    setListenState(false);
+  }
+}
+
+function stopInstructions() {
+  if (instructionsAudio) {
+    try { instructionsAudio.pause(); } catch (e) {}
+    instructionsAudio = null;
+  }
+  try { speechSynthesis.cancel(); } catch (e) {}
+  setListenState(false);
+}
+
+listenBtn.addEventListener('click', playInstructions);
+
+// Auto-open on the user's first visit. Subsequent visits stay clean.
+try {
+  if (!localStorage.getItem('pft_seen_about')) {
+    openInfo();
+    localStorage.setItem('pft_seen_about', '1');
+  }
+} catch (e) { /* localStorage unavailable — silently skip auto-open */ }
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.code === 'Escape' && !infoModal.hidden) { closeInfo(); return; }
+  if (e.code === 'Space') { e.preventDefault(); running ? pause() : start(); }
+  else if (e.code === 'KeyR') { reset(); }
+  else if (e.code === 'KeyC') { toggleCaptions(); }
+});
+
+// Init overlay state
+reset();
+</script>
+</body>
+</html>
