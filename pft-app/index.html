@@ -377,11 +377,15 @@
     padding-bottom: 1px; /* optical centering of the lowercase "i" */
   }
 
-  /* About / info modal */
+  /* About / info modal — pinned below the header so the page identity stays
+     visible above and the modal's close button stays well clear of the iOS
+     URL bar at the top of the screen. */
   .modal {
     position: fixed; inset: 0;
-    display: grid; place-items: center;
+    display: grid; place-items: start center;
+    padding: 90px 16px 16px;
     z-index: 300;
+    overflow-y: auto;
   }
   .modal[hidden] { display: none; }
   .modal-backdrop {
@@ -405,17 +409,20 @@
   }
   .modal-close {
     position: absolute;
-    top: 10px; right: 10px;
-    background: transparent;
-    border: none;
-    color: var(--muted);
-    font-size: 28px;
+    top: 12px; right: 12px;
+    background: rgba(255,255,255,0.10);
+    border: 1.5px solid rgba(255,255,255,0.25);
+    color: var(--white);
+    font-size: 24px;
+    font-weight: 600;
     line-height: 1;
-    padding: 6px 12px;
-    border-radius: 8px;
+    width: 44px; height: 44px;
+    border-radius: 50%;
     cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    z-index: 2;
   }
-  .modal-close:hover { color: var(--white); background: rgba(255,255,255,0.08); }
+  .modal-close:hover { background: rgba(255,255,255,0.20); }
   .modal-card h2 { font-size: 24px; font-weight: 800; margin-bottom: 14px; }
   .modal-card h3 { font-size: 14px; font-weight: 800; margin-top: 18px; margin-bottom: 6px; color: var(--bone); }
   .modal-card p { font-size: 14px; line-height: 1.55; color: var(--bone); margin-bottom: 6px; }
@@ -437,6 +444,20 @@
   .modal-listen:hover { background: rgba(255,255,255,0.10); border-color: rgba(255,255,255,0.30); }
   .modal-listen.playing { background: var(--red); border-color: var(--red); }
   .modal-listen .listen-icon { font-size: 11px; line-height: 1; }
+  .modal-done {
+    display: block;
+    width: 100%;
+    margin-top: 24px;
+    padding: 14px 20px;
+    border-radius: 12px;
+    border: 1.5px solid var(--white);
+    background: var(--red);
+    color: var(--white);
+    font-weight: 600;
+    font-size: 16px;
+    cursor: pointer;
+  }
+  .modal-done:hover { background: var(--red-hot); }
 
   /* Intro / countdown overlay */
   .overlay {
@@ -495,16 +516,28 @@
     .corner-tr, .corner-br { right: 22px; }
     .corner-tl, .corner-tr { top: 16px; }
     .corner-bl, .corner-br { bottom: 10px; }
-    .track { width: min(68%, 440px); min-height: 70px; }
-    .cone { width: 36px; height: 44px; }
-    .runner { width: 52px; height: 60px; }
-    .runner .runner-glyph { font-size: 52px; }
+    /* On mobile, track is positioned absolutely above the corner stats —
+       no chance of overlap regardless of corner-stat font size. */
+    .track {
+      position: absolute;
+      bottom: 110px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: min(54%, 280px);
+      min-height: 56px;
+      margin: 0;
+      align-self: auto;
+    }
+    .cone { width: 32px; height: 40px; }
+    .runner { width: 44px; height: 52px; }
+    .runner .runner-glyph { font-size: 44px; }
+    .corner-bl, .corner-br { bottom: 14px; }
   }
   @media (max-width: 520px) {
     main { padding: 16px 14px 8px; }
     .corner-tl, .corner-bl { left: 12px; }
     .corner-tr, .corner-br { right: 12px; }
-    .track { width: 88%; }
+    .track { width: min(64%, 230px); bottom: 100px; }
     footer { padding: 10px 10px 14px; gap: 6px; }
     .controls { gap: 5px; }
     button { padding: 9px 12px; font-size: 13px; }
@@ -701,6 +734,7 @@
       Audio, visuals, and protocol implementation by [Your Organization].
     </p>
     <p class="modal-version">Version 1.0 · mockup</p>
+    <button class="modal-done" id="infoDone" type="button">Done</button>
   </div>
 </div>
 
@@ -771,53 +805,95 @@ const SCHEDULE = buildSchedule();
 const TOTAL_DURATION = SCHEDULE.duration;
 const TOTAL_LAPS_ALL = PROTOCOL.reduce((a, b) => a + b.shuttles, 0);
 
-/* --- Audio engine --- */
-let audioCtx = null;
-let masterGain = null;
-let scheduledSources = [];
-let startAudioTime = 0;   // audioCtx.currentTime when test begins (audio scheduling)
-let startWallMs   = 0;    // performance.now() when test begins (UI timing)
-let pauseOffset = 0;      // total seconds elapsed when paused
+/* --- Audio engine — pure HTMLAudioElement, no Web Audio.
+   iOS Safari rules: every audio playback must trace back to a user gesture.
+   We pre-create one Audio instance per source URL on the Start click and
+   "unlock" each via a silent play+pause. After that, we can re-play from
+   setTimeout callbacks anywhere in the app. */
+const audioCache = new Map();
+let scheduledSources = [];      // legacy stub — kept so finish/reset code doesn't break
+let startAudioTime = 0;         // unused (legacy — kept for compatibility)
+let startWallMs   = 0;          // performance.now() when test begins
+let pauseOffset = 0;
 let running = false;
 let paused = false;
+let audioUnlocked = false;
+// Stub so legacy `audioCtx.currentTime` / `audioCtx.state` references don't throw.
+const audioCtx = { currentTime: 0, state: 'running', resume: () => Promise.resolve() };
 
-function initAudio() {
-  if (audioCtx) return;
-  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  masterGain = audioCtx.createGain();
-  masterGain.gain.value = 0.95;
-  masterGain.connect(audioCtx.destination);
-}
-// Safety: some browsers can auto-suspend the context. Re-wake on visibility/focus.
-document.addEventListener('visibilitychange', () => {
-  if (audioCtx && audioCtx.state === 'suspended' && document.visibilityState === 'visible') {
-    audioCtx.resume().catch(() => {});
+function getAudio(src) {
+  if (!src) return null;
+  let a = audioCache.get(src);
+  if (!a) {
+    a = new Audio(src);
+    a.preload = 'auto';
+    audioCache.set(src, a);
   }
-});
-
-function scheduleBeep(when, { frequency = 880, duration = 0.18, gain = 0.6, type = 'sine' } = {}) {
-  // Safety: if the context is suspended at schedule time, try to wake it.
-  if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
-  const osc = audioCtx.createOscillator();
-  const g = audioCtx.createGain();
-  osc.type = type;
-  osc.frequency.value = frequency;
-  g.gain.setValueAtTime(0, when);
-  g.gain.linearRampToValueAtTime(gain, when + 0.01);
-  g.gain.setValueAtTime(gain, when + Math.max(0.015, duration - 0.04));
-  g.gain.linearRampToValueAtTime(0.0001, when + duration);
-  osc.connect(g); g.connect(masterGain);
-  osc.start(when);
-  osc.stop(when + duration + 0.05);
-  // Keep BOTH refs so the gain node isn't garbage-collected before it plays.
-  scheduledSources.push(osc, g);
+  return a;
 }
 
-function scheduleLevelFanfare(when) {
-  // Two-tone rising pair before the announcement
-  scheduleBeep(when,        { frequency: 660, duration: 0.15, gain: 0.5, type: 'triangle' });
-  scheduleBeep(when + 0.18, { frequency: 990, duration: 0.22, gain: 0.6, type: 'triangle' });
+function unlockAudio() {
+  // Pre-create + unlock every Audio instance during the user gesture (Start click).
+  // iOS Safari requires play() to be called from a user gesture for each
+  // Audio element. Using volume=0.001 instead of muted=true because some
+  // iOS versions don't count a muted play() as a real unlock attempt.
+  if (audioUnlocked) return;
+  const allSources = [
+    AUDIO.intro, AUDIO.preroll, AUDIO.begin, AUDIO.underway,
+    AUDIO.beepShuttle, AUDIO.beepLevelEnd, AUDIO.chimeLevelup,
+    AUDIO.halfway, AUDIO.close,
+    ...Object.values(AUDIO.countdown || {}),
+    ...Object.values(AUDIO.levels || {}),
+  ].filter(Boolean);
+  for (const src of allSources) {
+    const a = getAudio(src);
+    try {
+      a.volume = 0.001;
+      const p = a.play();
+      if (p && typeof p.then === 'function') {
+        p.then(() => { a.pause(); a.currentTime = 0; a.volume = 1.0; })
+         .catch(() => { a.volume = 1.0; });
+      } else {
+        a.pause(); a.currentTime = 0; a.volume = 1.0;
+      }
+    } catch (e) {
+      a.volume = 1.0;
+    }
+  }
+  audioUnlocked = true;
 }
+
+function playClip(src, { restart = true } = {}) {
+  const a = getAudio(src);
+  if (!a) return null;
+  try {
+    if (restart) a.currentTime = 0;
+    const p = a.play();
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+  } catch (e) { /* swallow */ }
+  return a;
+}
+
+function stopClip(src) {
+  const a = audioCache.get(src);
+  if (!a) return;
+  try { a.pause(); a.currentTime = 0; } catch (e) {}
+}
+
+function stopAllClips() {
+  for (const a of audioCache.values()) {
+    try { a.pause(); a.currentTime = 0; } catch (e) {}
+  }
+}
+
+// Legacy compatibility — these are still called from a few places.
+function initAudio() { /* no-op now; unlock happens on Start click */ }
+function scheduleBeep(_when, opts = {}) {
+  // Map old Web Audio frequency hint → which MP3 to play
+  const src = (opts.frequency && opts.frequency >= 1200) ? AUDIO.beepLevelEnd : AUDIO.beepShuttle;
+  playClip(src);
+}
+function scheduleLevelFanfare(_when) { playClip(AUDIO.chimeLevelup); }
 
 /* --- Speech --- */
 let voice = null;
@@ -1081,8 +1157,10 @@ async function start() {
   stopInstructions();
   if (!infoModal.hidden) closeInfo();
 
-  initAudio();
-  if (audioCtx.state === 'suspended') await audioCtx.resume();
+  // CRITICAL — must run synchronously inside this user-gesture handler so iOS
+  // Safari permits later setTimeout-triggered audio playback.
+  unlockAudio();
+
   ui.startBtn.disabled = true;
   ui.pauseBtn.disabled = false;
   ui.finishBtn.disabled = false;
@@ -1228,11 +1306,11 @@ function openInfo()  { infoModal.hidden = false; document.getElementById('infoCl
 function closeInfo() { infoModal.hidden = true; stopInstructions(); }
 document.getElementById('infoBtn').addEventListener('click', openInfo);
 document.getElementById('infoClose').addEventListener('click', closeInfo);
+document.getElementById('infoDone').addEventListener('click', closeInfo);
 infoModal.querySelector('[data-close]').addEventListener('click', closeInfo);
 
-/* --- Voice asset registry.
-   Real recorded MP3s drop in here as they arrive. Missing entries fall back
-   to browser TTS via playOrSpeak(). */
+/* --- Voice + beep asset registry.
+   Beeps are pre-rendered MP3s (not Web Audio) for iOS Safari compatibility. */
 const AUDIO = {
   intro:    'audio/01_intro.mp3',
   preroll:  'audio/02_preroll.mp3',
@@ -1245,6 +1323,10 @@ const AUDIO = {
   },
   begin:    'audio/04_begin.mp3',
   underway: 'audio/04b_underway.mp3',  // plays right after Go — "The test is underway."
+  // Beep + chime — generated MP3s, no Web Audio
+  beepShuttle:  'audio/beep_shuttle.mp3',   // 880Hz, 0.18s — every shuttle
+  beepLevelEnd: 'audio/beep_levelend.mp3',  // 1320Hz, 0.35s — last shuttle of a level + start beep
+  chimeLevelup: 'audio/chime_levelup.mp3',  // 660+990Hz fanfare — fires before "Level N" voice
   levels: {
      2: 'audio/05_level_02.mp3',  3: 'audio/05_level_03.mp3',  4: 'audio/05_level_04.mp3',
      5: 'audio/05_level_05.mp3',  6: 'audio/05_level_06.mp3',  7: 'audio/05_level_07.mp3',
@@ -1272,14 +1354,11 @@ async function playHalfwayCue(level) {
   }
 }
 
-/* Fire-and-forget: play the audio if we have it, else speak the fallback text. */
+/* Fire-and-forget: play the cached audio (iOS-unlocked) or speak fallback. */
 function playOrSpeak(audioSrc, fallbackText) {
   if (audioSrc) {
-    try {
-      const a = new Audio(audioSrc);
-      a.play().catch(() => { if (fallbackText) speak(fallbackText); });
-      return a;
-    } catch (e) { /* fall through */ }
+    const a = playClip(audioSrc);
+    if (a) return a;
   }
   if (fallbackText) speak(fallbackText);
   return null;
@@ -1289,17 +1368,20 @@ function playOrSpeak(audioSrc, fallbackText) {
 function playAndWait(audioSrc) {
   return new Promise((resolve) => {
     if (!audioSrc) { resolve(); return; }
+    const a = getAudio(audioSrc);
+    if (!a) { resolve(); return; }
+    const done = () => {
+      a.removeEventListener('ended', done);
+      a.removeEventListener('error', done);
+      resolve();
+    };
+    a.addEventListener('ended', done);
+    a.addEventListener('error', done);
     try {
-      const a = new Audio(audioSrc);
-      const done = () => {
-        a.removeEventListener('ended', done);
-        a.removeEventListener('error', done);
-        resolve();
-      };
-      a.addEventListener('ended', done);
-      a.addEventListener('error', done);
-      a.play().catch(done);
-    } catch (e) { resolve(); }
+      a.currentTime = 0;
+      const p = a.play();
+      if (p && typeof p.catch === 'function') p.catch(done);
+    } catch (e) { done(); }
   });
 }
 
@@ -1317,11 +1399,22 @@ function setListenState(playing) {
 function playInstructions() {
   if (instructionsAudio) { stopInstructions(); return; }
   if (!AUDIO.intro) { setListenState(false); return; }
+  // First click also unlocks audio for the rest of the session.
+  unlockAudio();
+  const a = getAudio(AUDIO.intro);
+  if (!a) { setListenState(false); return; }
+  const onDone = () => {
+    a.removeEventListener('ended', onDone);
+    a.removeEventListener('error', onDone);
+    instructionsAudio = null;
+    setListenState(false);
+  };
+  a.addEventListener('ended', onDone);
+  a.addEventListener('error', onDone);
   try {
-    instructionsAudio = new Audio(AUDIO.intro);
-    instructionsAudio.addEventListener('ended', () => { instructionsAudio = null; setListenState(false); });
-    instructionsAudio.addEventListener('error', () => { instructionsAudio = null; setListenState(false); });
-    instructionsAudio.play().catch(() => { instructionsAudio = null; setListenState(false); });
+    a.currentTime = 0;
+    a.play().catch(onDone);
+    instructionsAudio = a;
     setListenState(true);
   } catch (e) {
     instructionsAudio = null;
@@ -1331,7 +1424,7 @@ function playInstructions() {
 
 function stopInstructions() {
   if (instructionsAudio) {
-    try { instructionsAudio.pause(); } catch (e) {}
+    try { instructionsAudio.pause(); instructionsAudio.currentTime = 0; } catch (e) {}
     instructionsAudio = null;
   }
   try { speechSynthesis.cancel(); } catch (e) {}
@@ -1340,13 +1433,9 @@ function stopInstructions() {
 
 listenBtn.addEventListener('click', playInstructions);
 
-// Auto-open on the user's first visit. Subsequent visits stay clean.
-try {
-  if (!localStorage.getItem('pft_seen_about')) {
-    openInfo();
-    localStorage.setItem('pft_seen_about', '1');
-  }
-} catch (e) { /* localStorage unavailable — silently skip auto-open */ }
+// Auto-open the instructions on every page load. Easy to dismiss with
+// either the X (top right) or the Done button (bottom of the card).
+openInfo();
 
 // Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
