@@ -823,6 +823,7 @@ const TOTAL_LAPS_ALL = PROTOCOL.reduce((a, b) => a + b.shuttles, 0);
    created in memory, which can never 404 or fail to load. */
 const audioCache = new Map();
 let audioReady = false;
+let lapAudio = null;            // single shared HTMLAudioElement for lap-number callouts
 let scheduledSources = [];   // legacy stub for finish/reset code
 let startAudioTime = 0;      // unused (legacy)
 let startWallMs   = 0;
@@ -870,9 +871,16 @@ async function ensureAudio() {
     AUDIO.halfway, AUDIO.close,
     ...Object.values(AUDIO.countdown || {}),
     ...Object.values(AUDIO.levels || {}),
-    ...Object.values(AUDIO.lap || {}),
   ].filter(Boolean);
   for (const src of allSources) getAudio(src);
+  // Lap-number callouts use a single shared Audio element with dynamic .src.
+  // iOS limits concurrent Audio instances; one shared element bypasses that.
+  if (!lapAudio) {
+    lapAudio = new Audio();
+    lapAudio.preload = 'auto';
+    // Prime it with the first lap clip so iOS unlocks this element specifically.
+    if (AUDIO.lap && AUDIO.lap[1]) lapAudio.src = AUDIO.lap[1];
+  }
   audioReady = true;
 }
 
@@ -976,11 +984,17 @@ function scheduleUpcoming() {
           ? { frequency: 1320, duration: 0.35, gain: 0.95, type: 'sine' }
           : { frequency: 880,  duration: 0.18, gain: 0.85, type: 'sine' };
         scheduleBeep(audioCtx.currentTime, opts);
-        // Lap number voice callout — fires ~250ms after the beep so it doesn't
-        // mask the beep itself. Resets per level via ev.lapInLevel.
-        if (!isEnd && AUDIO.lap && AUDIO.lap[lapInLevel]) {
+        // Lap number voice callout — uses a single shared Audio element with
+        // dynamic .src to avoid iOS concurrent-instance limits.
+        if (!isEnd && AUDIO.lap && AUDIO.lap[lapInLevel] && lapAudio) {
           setTimeout(() => {
-            if (running && !paused) playClip(AUDIO.lap[lapInLevel]);
+            if (!running || paused) return;
+            try {
+              lapAudio.src = AUDIO.lap[lapInLevel];
+              lapAudio.currentTime = 0;
+              const p = lapAudio.play();
+              if (p && typeof p.catch === 'function') p.catch(() => {});
+            } catch (e) {}
           }, 250);
         }
       }, delayMs);
