@@ -833,10 +833,10 @@ function getAudio(src) {
 }
 
 function unlockAudio() {
-  // Pre-create + unlock every Audio instance during the user gesture (Start click).
-  // iOS Safari requires play() to be called from a user gesture for each
-  // Audio element. Using volume=0.001 instead of muted=true because some
-  // iOS versions don't count a muted play() as a real unlock attempt.
+  // Pre-cache all Audio instances WITHOUT playing them. Playing 30 clips at
+  // once on Start created a cacophony. iOS unlocks the audio session when
+  // the first real audio plays from a user gesture (the preroll inside
+  // playAndWait below); that single unlock then permits subsequent plays.
   if (audioUnlocked) return;
   const allSources = [
     AUDIO.intro, AUDIO.preroll, AUDIO.begin, AUDIO.underway,
@@ -847,18 +847,8 @@ function unlockAudio() {
   ].filter(Boolean);
   for (const src of allSources) {
     const a = getAudio(src);
-    try {
-      a.volume = 0.001;
-      const p = a.play();
-      if (p && typeof p.then === 'function') {
-        p.then(() => { a.pause(); a.currentTime = 0; a.volume = 1.0; })
-         .catch(() => { a.volume = 1.0; });
-      } else {
-        a.pause(); a.currentTime = 0; a.volume = 1.0;
-      }
-    } catch (e) {
-      a.volume = 1.0;
-    }
+    a.preload = 'auto';
+    a.load();
   }
   audioUnlocked = true;
 }
