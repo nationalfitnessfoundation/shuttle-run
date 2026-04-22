@@ -805,33 +805,52 @@ const SCHEDULE = buildSchedule();
 const TOTAL_DURATION = SCHEDULE.duration;
 const TOTAL_LAPS_ALL = PROTOCOL.reduce((a, b) => a + b.shuttles, 0);
 
-/* --- Web Audio engine — iOS-bulletproof.
-   Single AudioContext, unlocked once on user gesture. All clips loaded as
-   AudioBuffers up front. Playback via AudioBufferSourceNode = sample-accurate,
-   no per-element unlock issues, no interference between clips. */
-let actx = null;                       // AudioContext
-const buffers = new Map();             // src URL → AudioBuffer
-const activeSources = new Set();       // currently-playing AudioBufferSourceNodes
-let audioReady = false;                // true after all buffers loaded
-let scheduledSources = [];             // legacy stub for finish/reset code
-let startAudioTime = 0;                // unused (legacy)
-let startWallMs   = 0;                 // performance.now() when test begins
+/* --- Audio engine — HTMLAudioElement playback + in-memory Web Audio unlock.
+   No external file dependency for the unlock — uses a 1-sample silent buffer
+   created in memory, which can never 404 or fail to load. */
+const audioCache = new Map();
+let audioReady = false;
+let scheduledSources = [];   // legacy stub for finish/reset code
+let startAudioTime = 0;      // unused (legacy)
+let startWallMs   = 0;
 let pauseOffset = 0;
 let running = false;
 let paused = false;
 // Stub so legacy `audioCtx.currentTime` / `audioCtx.state` references don't throw.
 const audioCtx = { currentTime: 0, state: 'running', resume: () => Promise.resolve() };
 
+function getAudio(src) {
+  if (!src) return null;
+  let a = audioCache.get(src);
+  if (!a) {
+    a = new Audio();
+    a.preload = 'auto';
+    a.src = src;
+    audioCache.set(src, a);
+  }
+  return a;
+}
+
 async function ensureAudio() {
-  // Initialize AudioContext + load all clips. Idempotent.
-  // MUST be called from a user gesture (Start click, Listen click).
-  if (!actx) {
-    actx = new (window.AudioContext || window.webkitAudioContext)();
-  }
-  if (actx.state === 'suspended') {
-    try { await actx.resume(); } catch (e) {}
-  }
+  // MUST be called from a user gesture (Start or Listen click). Idempotent.
   if (audioReady) return;
+  // Unlock iOS audio session via an in-memory silent Web Audio buffer.
+  // No external file = no path issues, no 404s, can never silently fail.
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) {
+      const ctx = new AC();
+      if (ctx.state === 'suspended') {
+        try { await ctx.resume(); } catch (e) {}
+      }
+      const buffer = ctx.createBuffer(1, 1, 22050);
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(ctx.destination);
+      source.start(0);
+    }
+  } catch (e) { /* swallow — fall through to Audio playback regardless */ }
+  // Pre-create cached Audio instances so .play() is fast later.
   const allSources = [
     AUDIO.intro, AUDIO.preroll, AUDIO.begin, AUDIO.underway,
     AUDIO.beepShuttle, AUDIO.beepLevelEnd, AUDIO.chimeLevelup,
@@ -839,42 +858,28 @@ async function ensureAudio() {
     ...Object.values(AUDIO.countdown || {}),
     ...Object.values(AUDIO.levels || {}),
   ].filter(Boolean);
-  await Promise.all(allSources.map(async (src) => {
-    if (buffers.has(src)) return;
-    try {
-      const response = await fetch(src);
-      const arrayBuffer = await response.arrayBuffer();
-      const buffer = await new Promise((resolve, reject) => {
-        // Use callback form for Safari compatibility (older Safari needs it)
-        actx.decodeAudioData(arrayBuffer, resolve, reject);
-      });
-      buffers.set(src, buffer);
-    } catch (e) {
-      console.warn('Audio load failed:', src, e);
-    }
-  }));
+  for (const src of allSources) getAudio(src);
   audioReady = true;
 }
 
 function playClip(src) {
-  if (!actx || !buffers.has(src)) return null;
-  const source = actx.createBufferSource();
-  source.buffer = buffers.get(src);
-  source.connect(actx.destination);
-  source.addEventListener('ended', () => activeSources.delete(source));
-  try { source.start(0); } catch (e) { return null; }
-  activeSources.add(source);
-  return source;
+  const a = getAudio(src);
+  if (!a) return null;
+  try {
+    a.currentTime = 0;
+    const p = a.play();
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+  } catch (e) { return null; }
+  return a;
 }
 
 function stopAllClips() {
-  for (const source of activeSources) {
-    try { source.stop(); } catch (e) {}
+  for (const a of audioCache.values()) {
+    try { a.pause(); a.currentTime = 0; } catch (e) {}
   }
-  activeSources.clear();
 }
 
-// Legacy compatibility shims — still called from doCountdown, finish, etc.
+// Legacy compatibility shims
 function unlockAudio() { /* superseded by ensureAudio() */ }
 function initAudio() { /* superseded */ }
 function scheduleBeep(_when, opts = {}) {
@@ -1358,16 +1363,21 @@ function playOrSpeak(audioSrc, fallbackText) {
 /* Await-able audio play — resolves when the clip ends. */
 function playAndWait(audioSrc) {
   return new Promise((resolve) => {
-    if (!audioSrc || !buffers.has(audioSrc) || !actx) { resolve(); return; }
-    const source = actx.createBufferSource();
-    source.buffer = buffers.get(audioSrc);
-    source.connect(actx.destination);
-    source.addEventListener('ended', () => {
-      activeSources.delete(source);
+    if (!audioSrc) { resolve(); return; }
+    const a = getAudio(audioSrc);
+    if (!a) { resolve(); return; }
+    const done = () => {
+      a.removeEventListener('ended', done);
+      a.removeEventListener('error', done);
       resolve();
-    });
-    try { source.start(0); } catch (e) { resolve(); return; }
-    activeSources.add(source);
+    };
+    a.addEventListener('ended', done);
+    a.addEventListener('error', done);
+    try {
+      a.currentTime = 0;
+      const p = a.play();
+      if (p && typeof p.catch === 'function') p.catch(done);
+    } catch (e) { done(); }
   });
 }
 
@@ -1385,34 +1395,34 @@ function setListenState(playing) {
 async function playInstructions() {
   if (instructionsAudio) { stopInstructions(); return; }
   if (!AUDIO.intro) { setListenState(false); return; }
-  // Init + load all audio (idempotent). Show "Loading..." state if first run.
-  setListenState(true);
-  listenBtn.querySelector('.listen-label').textContent = 'Loading…';
   await ensureAudio();
-  if (!buffers.has(AUDIO.intro)) {
-    setListenState(false);
-    return;
-  }
-  const source = actx.createBufferSource();
-  source.buffer = buffers.get(AUDIO.intro);
-  source.connect(actx.destination);
-  source.addEventListener('ended', () => {
-    activeSources.delete(source);
-    if (instructionsAudio === source) {
+  const a = getAudio(AUDIO.intro);
+  if (!a) { setListenState(false); return; }
+  const onDone = () => {
+    a.removeEventListener('ended', onDone);
+    a.removeEventListener('error', onDone);
+    if (instructionsAudio === a) {
       instructionsAudio = null;
       setListenState(false);
     }
-  });
-  try { source.start(0); } catch (e) { setListenState(false); return; }
-  activeSources.add(source);
-  instructionsAudio = source;
-  setListenState(true);
+  };
+  a.addEventListener('ended', onDone);
+  a.addEventListener('error', onDone);
+  try {
+    a.currentTime = 0;
+    const p = a.play();
+    if (p && typeof p.catch === 'function') p.catch(onDone);
+    instructionsAudio = a;
+    setListenState(true);
+  } catch (e) {
+    instructionsAudio = null;
+    setListenState(false);
+  }
 }
 
 function stopInstructions() {
   if (instructionsAudio) {
-    try { instructionsAudio.stop(); } catch (e) {}
-    activeSources.delete(instructionsAudio);
+    try { instructionsAudio.pause(); instructionsAudio.currentTime = 0; } catch (e) {}
     instructionsAudio = null;
   }
   try { speechSynthesis.cancel(); } catch (e) {}
