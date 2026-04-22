@@ -824,6 +824,11 @@ const TOTAL_LAPS_ALL = PROTOCOL.reduce((a, b) => a + b.shuttles, 0);
 const audioCache = new Map();
 let audioReady = false;
 let lapAudio = null;            // single shared HTMLAudioElement for lap-number callouts
+// Beep instance pool — rotating through 3 Audio elements per type prevents
+// Safari's "play() interrupted" rejection when beeps fire in rapid succession.
+const BEEP_POOL_SIZE = 3;
+const beepPool = { shuttle: [], levelend: [] };
+const beepPoolIdx = { shuttle: 0, levelend: 0 };
 let scheduledSources = [];   // legacy stub for finish/reset code
 let startAudioTime = 0;      // unused (legacy)
 let startWallMs   = 0;
@@ -881,7 +886,40 @@ async function ensureAudio() {
     // Prime it with the first lap clip so iOS unlocks this element specifically.
     if (AUDIO.lap && AUDIO.lap[1]) lapAudio.src = AUDIO.lap[1];
   }
+  // Build the rotating beep instance pool — one set per beep type.
+  if (beepPool.shuttle.length === 0 && AUDIO.beepShuttle) {
+    for (let i = 0; i < BEEP_POOL_SIZE; i++) {
+      const a = new Audio();
+      a.preload = 'auto';
+      a.src = AUDIO.beepShuttle;
+      beepPool.shuttle.push(a);
+    }
+  }
+  if (beepPool.levelend.length === 0 && AUDIO.beepLevelEnd) {
+    for (let i = 0; i < BEEP_POOL_SIZE; i++) {
+      const a = new Audio();
+      a.preload = 'auto';
+      a.src = AUDIO.beepLevelEnd;
+      beepPool.levelend.push(a);
+    }
+  }
   audioReady = true;
+}
+
+function playBeep(type) {
+  const pool = beepPool[type];
+  if (!pool || pool.length === 0) {
+    // Fallback to single cached instance if pool isn't built yet.
+    playClip(type === 'levelend' ? AUDIO.beepLevelEnd : AUDIO.beepShuttle);
+    return;
+  }
+  const a = pool[beepPoolIdx[type]];
+  beepPoolIdx[type] = (beepPoolIdx[type] + 1) % pool.length;
+  try {
+    a.currentTime = 0;
+    const p = a.play();
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+  } catch (e) {}
 }
 
 function playClip(src) {
@@ -905,8 +943,8 @@ function stopAllClips() {
 function unlockAudio() { /* superseded by ensureAudio() */ }
 function initAudio() { /* superseded */ }
 function scheduleBeep(_when, opts = {}) {
-  const src = (opts.frequency && opts.frequency >= 1200) ? AUDIO.beepLevelEnd : AUDIO.beepShuttle;
-  playClip(src);
+  const isLevelEnd = (opts.frequency && opts.frequency >= 1200);
+  playBeep(isLevelEnd ? 'levelend' : 'shuttle');
 }
 function scheduleLevelFanfare(_when) { playClip(AUDIO.chimeLevelup); }
 
